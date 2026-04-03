@@ -1,0 +1,232 @@
+// Prisma schema — Kinesius
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────
+
+enum Rol {
+  ADMIN
+  PROFESOR
+  CLIENTE
+}
+
+enum TipoCliente {
+  ABONADO
+  NO_ABONADO
+}
+
+enum ZonaClase {
+  ALTA
+  MEDIA
+  BAJA
+}
+
+enum TipoClase {
+  FIJA       // pertenece a una agenda mensual (recurrente)
+  ESPONTANEA // se crea para un día puntual
+}
+
+enum EstadoReserva {
+  PENDIENTE_PAGO   // no abonado: esperando el 50% de seña
+  RESERVA_PAGA     // no abonado: seña pagada, esperando el resto presencial
+  CONFIRMADA       // abonado: ya pagó el abono, reserva confirmada
+  CANCELADA
+  COMPLETADA       // clase finalizada y asistencia registrada
+}
+
+enum MetodoPago {
+  EFECTIVO
+  TRANSFERENCIA
+}
+
+enum TipoPago {
+  SENA         // 50% inicial del no abonado
+  COMPLEMENTO  // 50% restante que registra el admin presencialmente
+  ABONO        // pago adelantado del abonado (mínimo 3 clases)
+}
+
+// ─────────────────────────────────────────
+// USUARIO
+// Representa las cuentas de acceso al sistema.
+// ADMIN: 1 cuenta precargada por seed.
+// PROFESOR: 1 cuenta compartida precargada por seed (para registrar asistencia).
+// CLIENTE: se registran desde la API.
+// ─────────────────────────────────────────
+
+model Usuario {
+  id          Int          @id @default(autoincrement())
+  nombre      String
+  apellido    String
+  dni         String       @unique
+  email       String       @unique
+  password    String       // almacenado como hash bcrypt
+  rol         Rol
+  tipoCliente TipoCliente  @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  reservas    Reserva[]
+  colasEspera ColaEspera[]
+
+  @@map("usuarios")
+}
+
+// ─────────────────────────────────────────
+// PROFESOR
+// Tabla separada de Usuario. Almacena los datos de los profesores
+// reales del centro para asignarlos a clases.
+// No tienen cuenta de acceso individual; comparten la cuenta PROFESOR.
+// ─────────────────────────────────────────
+
+model Profesor {
+  id       Int    @id @default(autoincrement())
+  nombre   String
+  apellido String
+
+  clases Clase[]
+
+  @@unique([nombre, apellido])
+  @@map("profesores")
+}
+
+// ─────────────────────────────────────────
+// AGENDA MENSUAL
+// Agrupa las clases fijas de un mes calendario.
+// ─────────────────────────────────────────
+
+model AgendaMensual {
+  id     Int     @id @default(autoincrement())
+  mes    Int     // 1–12
+  anio   Int
+  clases Clase[]
+
+  @@unique([mes, anio])
+  @@map("agendas_mensuales")
+}
+
+// ─────────────────────────────────────────
+// CLASE
+// ─────────────────────────────────────────
+
+model Clase {
+  id         Int       @id @default(autoincrement())
+  zona       ZonaClase
+  tipo       TipoClase
+  fecha      DateTime? // solo para ESPONTANEA; en FIJA se usa la agenda
+  horario    DateTime  // fecha+hora de inicio de la clase
+  cupoMaximo Int
+  precio     Decimal   @db.Decimal(10, 2)
+  // Duración siempre 1 hora, no hace falta modelarla como campo
+
+  // Profesor real asignado a esta clase (tabla Profesor, no Usuario)
+  profesorId Int
+  profesor   Profesor @relation(fields: [profesorId], references: [id])
+
+  // Solo presente en clases FIJA
+  agendaId Int?
+  agenda   AgendaMensual? @relation(fields: [agendaId], references: [id])
+
+  // Código QR único generado al crear la clase (para registrar asistencia)
+  codigoQr String @unique @default(cuid())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservas    Reserva[]
+  colasEspera ColaEspera[]
+
+  @@map("clases")
+}
+
+// ─────────────────────────────────────────
+// RESERVA
+// ─────────────────────────────────────────
+
+model Reserva {
+  id          Int           @id @default(autoincrement())
+  estado      EstadoReserva @default(PENDIENTE_PAGO)
+  montoPagado Decimal       @db.Decimal(10, 2) @default(0) // total pagado hasta el momento
+
+  clienteId Int
+  cliente   Usuario @relation(fields: [clienteId], references: [id])
+
+  claseId Int
+  clase   Clase @relation(fields: [claseId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  pagos      Pago[]
+  asistencia Asistencia?
+
+  @@unique([clienteId, claseId]) // un cliente no puede reservar la misma clase dos veces
+  @@map("reservas")
+}
+
+// ─────────────────────────────────────────
+// PAGO
+// ─────────────────────────────────────────
+
+model Pago {
+  id         Int        @id @default(autoincrement())
+  monto      Decimal    @db.Decimal(10, 2)
+  metodo     MetodoPago
+  tipo       TipoPago
+  referencia String?    // número de transferencia, recibo, etc.
+
+  reservaId Int
+  reserva   Reserva @relation(fields: [reservaId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("pagos")
+}
+
+// ─────────────────────────────────────────
+// ASISTENCIA
+// ─────────────────────────────────────────
+
+model Asistencia {
+  id            Int     @id @default(autoincrement())
+  presente      Boolean @default(false)
+  registradoPor Int?    // id del usuario que registró (profesor o admin)
+
+  reservaId Int     @unique // una reserva tiene como máximo un registro de asistencia
+  reserva   Reserva @relation(fields: [reservaId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("asistencias")
+}
+
+// ─────────────────────────────────────────
+// COLA DE ESPERA
+// ─────────────────────────────────────────
+
+model ColaEspera {
+  id       Int       @id @default(autoincrement())
+  posicion Int       // orden en la cola (abonados tienen prioridad)
+  expiraEn DateTime? // hasta cuándo tiene para confirmar (5hs desde notificación)
+
+  claseId Int
+  clase   Clase @relation(fields: [claseId], references: [id])
+
+  clienteId Int
+  cliente   Usuario @relation(fields: [clienteId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([claseId, clienteId])
+  @@unique([claseId, posicion])
+  @@map("cola_espera")
+}

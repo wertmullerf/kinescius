@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kinesius_db
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Servicio de seed: corre una sola vez después de que postgres esté listo.
+  # Usa los node_modules instalados localmente en ./backend (montados como volumen).
+  # Prerequisito: haber corrido "npm install" y "npm run db:migrate" antes de "docker-compose up".
+  seed:
+    image: node:20-alpine
+    working_dir: /app
+    env_file:
+      - ./backend/.env
+    environment:
+      # Sobreescribe DATABASE_URL para usar el hostname interno de Docker
+      # (dentro de la red de compose, postgres se accede por su nombre de servicio)
+      DATABASE_URL: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+    volumes:
+      - ./backend:/app
+    command: npx ts-node --project tsconfig.json prisma/seed.ts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
