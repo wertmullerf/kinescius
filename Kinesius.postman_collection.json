@@ -1,0 +1,732 @@
+{
+  "info": {
+    "name": "Kinesius API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl",      "value": "http://localhost:3000/api" },
+    { "key": "tokenAdmin",   "value": "" },
+    { "key": "tokenProfesor","value": "" },
+    { "key": "tokenCliente", "value": "" },
+    { "key": "agendaId",     "value": "" },
+    { "key": "patronId",     "value": "" },
+    { "key": "instanciaId",  "value": "" },
+    { "key": "sueltaId",     "value": "" },
+    { "key": "profesorId",   "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register (cliente nuevo)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Test\",\n  \"apellido\": \"Usuario\",\n  \"dni\": \"40123456\",\n  \"email\": \"test@mail.com\",\n  \"password\": \"test1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login ADMIN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.token) {",
+                  "  pm.collectionVariables.set('tokenAdmin', json.data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"laura@kinesius.com\",\n  \"password\": \"admin1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login PROFESOR",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.token) {",
+                  "  pm.collectionVariables.set('tokenProfesor', json.data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"profesor@kinesius.com\",\n  \"password\": \"profesor1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login CLIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.token) {",
+                  "  pm.collectionVariables.set('tokenCliente', json.data.token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"carlos@mail.com\",\n  \"password\": \"cliente1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Me (token actual)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/auth/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Profesores",
+      "item": [
+        {
+          "name": "Listar profesores",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/profesores"
+          }
+        },
+        {
+          "name": "Listar profesores (como PROFESOR)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenProfesor}}" }],
+            "url": "{{baseUrl}}/profesores"
+          }
+        },
+        {
+          "name": "Listar profesores (como CLIENTE — debe dar 403)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenCliente}}" }],
+            "url": "{{baseUrl}}/profesores"
+          }
+        },
+        {
+          "name": "Crear profesor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('profesorId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/profesores",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Roberto\",\n  \"apellido\": \"Sánchez\",\n  \"dni\": \"28999000\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ver profesor",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/profesores/{{profesorId}}"
+          }
+        },
+        {
+          "name": "Editar profesor",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/profesores/{{profesorId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Roberto\",\n  \"apellido\": \"Fernández\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar profesor",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/profesores/{{profesorId}}"
+          }
+        },
+        {
+          "name": "Crear profesor — DNI duplicado (debe dar error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/profesores",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Otro\",\n  \"apellido\": \"Profesor\",\n  \"dni\": \"27100001\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear profesor — validación falla (DNI inválido)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/profesores",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Test\",\n  \"apellido\": \"Test\",\n  \"dni\": \"ABC\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Agenda",
+      "item": [
+        {
+          "name": "Listar agendas",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/agenda"
+          }
+        },
+        {
+          "name": "Crear agenda (mes actual)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "const now = new Date();",
+                  "pm.variables.set('mesActual',  now.getMonth() + 1);",
+                  "pm.variables.set('anioActual', now.getFullYear());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('agendaId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mes\": {{mesActual}},\n  \"anio\": {{anioActual}}\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear agenda — mes+año fijo (mayo 2026)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('agendaId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mes\": 5,\n  \"anio\": 2026\n}"
+            }
+          }
+        },
+        {
+          "name": "Ver agenda con patrones",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}"
+          }
+        },
+        {
+          "name": "Eliminar agenda",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}"
+          }
+        },
+        {
+          "name": "Crear agenda — mes+año duplicado (debe dar error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mes\": 5,\n  \"anio\": 2026\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear agenda — mes inválido (debe dar error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mes\": 13,\n  \"anio\": 2026\n}"
+            }
+          }
+        },
+        {
+          "name": "Ver agenda — no existe (debe dar 404)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/agenda/99999"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clases — Patrones Recurrentes",
+      "item": [
+        {
+          "name": "Listar patrones de la agenda",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes"
+          }
+        },
+        {
+          "name": "Listar patrones (como PROFESOR)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenProfesor}}" }],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes"
+          }
+        },
+        {
+          "name": "Crear patrón — Lunes 18:00 ALTA Juan Pérez",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('patronId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diaSemana\": 1,\n  \"hora\": \"18:00\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear patrón — Miércoles 09:00 MEDIA María González",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diaSemana\": 3,\n  \"hora\": \"09:00\",\n  \"zona\": \"MEDIA\",\n  \"cupoMaximo\": 8,\n  \"precio\": 1500,\n  \"profesorId\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear patrón — validación falla (hora inválida)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diaSemana\": 1,\n  \"hora\": \"8:00\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear patrón — profesor inexistente (debe dar error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diaSemana\": 2,\n  \"hora\": \"10:00\",\n  \"zona\": \"BAJA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 1000,\n  \"profesorId\": 99999\n}"
+            }
+          }
+        },
+        {
+          "name": "Editar patrón — cambiar precio y cupo (propaga a instancias)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"precio\": 2500,\n  \"cupoMaximo\": 12\n}"
+            }
+          }
+        },
+        {
+          "name": "Editar patrón — cambiar diaSemana (regenera instancias)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diaSemana\": 2\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar patrón",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}"
+          }
+        },
+        {
+          "name": "Editar patrón — como CLIENTE (debe dar 403)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenCliente}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"precio\": 999\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clases — Instancias",
+      "item": [
+        {
+          "name": "Listar instancias del mes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.length > 0) {",
+                  "  pm.collectionVariables.set('instanciaId', json.data[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/instancias"
+          }
+        },
+        {
+          "name": "Listar instancias (como CLIENTE)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenCliente}}" }],
+            "url": "{{baseUrl}}/agenda/{{agendaId}}/instancias"
+          }
+        },
+        {
+          "name": "Editar instancia — excepción (cambio de profesor)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/instancias/{{instanciaId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profesorId\": 2,\n  \"motivoExcepcion\": \"Juan Pérez está de licencia ese día\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Editar instancia — sin motivoExcepcion (debe dar error)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/instancias/{{instanciaId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cupoMaximo\": 5\n}"
+            }
+          }
+        },
+        {
+          "name": "Cancelar instancia",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/instancias/{{instanciaId}}/cancelar"
+          }
+        },
+        {
+          "name": "Editar instancia — como CLIENTE (debe dar 403)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenCliente}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/instancias/{{instanciaId}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cupoMaximo\": 5,\n  \"motivoExcepcion\": \"test\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Clases — Sueltas",
+      "item": [
+        {
+          "name": "Crear clase suelta",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Próximo martes a las 15:00",
+                  "const now = new Date();",
+                  "const diasHastaMartes = (2 - now.getDay() + 7) % 7 || 7;",
+                  "const martes = new Date(now);",
+                  "martes.setDate(now.getDate() + diasHastaMartes);",
+                  "martes.setHours(15, 0, 0, 0);",
+                  "pm.variables.set('fechaSuelta', martes.toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.id) {",
+                  "  pm.collectionVariables.set('sueltaId', json.data.id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/instancias/sueltas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"{{fechaSuelta}}\",\n  \"zona\": \"BAJA\",\n  \"cupoMaximo\": 6,\n  \"precio\": 1200,\n  \"profesorId\": 3\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear clase suelta — fecha fija manual",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/instancias/sueltas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"2026-06-15T10:00:00.000Z\",\n  \"zona\": \"MEDIA\",\n  \"cupoMaximo\": 8,\n  \"precio\": 1800,\n  \"profesorId\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear clase suelta — profesor inexistente (debe dar error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/instancias/sueltas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"2026-07-10T11:00:00.000Z\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 99999\n}"
+            }
+          }
+        },
+        {
+          "name": "Crear clase suelta — fecha inválida (debe dar error)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "url": "{{baseUrl}}/instancias/sueltas",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fecha\": \"no-es-una-fecha\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 1\n}"
+            }
+          }
+        },
+        {
+          "name": "Eliminar clase suelta",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
+            "url": "{{baseUrl}}/instancias/sueltas/{{sueltaId}}"
+          }
+        },
+        {
+          "name": "Eliminar clase suelta — como CLIENTE (debe dar 403)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{tokenCliente}}" }],
+            "url": "{{baseUrl}}/instancias/sueltas/{{sueltaId}}"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "url": "http://localhost:3000/health"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -27,9 +27,36 @@ export {
 // Tipos de utilidad para payloads frecuentes
 // ─────────────────────────────────────────
 
-import type { ClaseRecurrente, ClaseInstancia } from "@prisma/client";
+import type { Prisma, ClaseRecurrente, ClaseInstancia } from "@prisma/client";
 
 /** ClaseInstancia con su patrón recurrente incluido (join más común). */
 export type ClaseInstanciaConRecurrente = ClaseInstancia & {
   recurrente: ClaseRecurrente;
 };
+
+/**
+ * ClaseRecurrente enriquecida para listados.
+ * hora es un ISO DateTime donde solo importa HH:mm.
+ */
+export type ClaseRecurrenteConDetalle = Prisma.ClaseRecurrenteGetPayload<{
+  include: {
+    profesor: { select: { id: true; nombre: true; apellido: true } };
+    _count: { select: { instancias: true } };
+  };
+}>;
+
+/**
+ * ClaseInstancia enriquecida para listados.
+ * Incluye datos del profesor y conteo de reservas vs cupoMaximo.
+ */
+export type ClaseInstanciaConDetalle = Prisma.ClaseInstanciaGetPayload<{
+  include: {
+    profesor: { select: { id: true; nombre: true; apellido: true } };
+    _count: { select: { reservas: true } };
+  };
+}>;
+
+/** AgendaMensual con conteo de patrones recurrentes. */
+export type AgendaMensualConConteo = Prisma.AgendaMensualGetPayload<{
+  include: { _count: { select: { clases: true } } };
+}>;

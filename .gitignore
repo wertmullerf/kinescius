@@ -33,3 +33,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+
+# Cluade
+.claude/
