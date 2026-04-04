@@ -3,6 +3,7 @@
 
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl"]
 }
 
 datasource db {
@@ -29,11 +30,6 @@ enum ZonaClase {
   ALTA
   MEDIA
   BAJA
-}
-
-enum TipoClase {
-  FIJA       // pertenece a una agenda mensual (recurrente)
-  ESPONTANEA // se crea para un día puntual
 }
 
 enum EstadoReserva {
@@ -64,16 +60,16 @@ enum TipoPago {
 // ─────────────────────────────────────────
 
 model Usuario {
-  id          Int          @id @default(autoincrement())
+  id          Int         @id @default(autoincrement())
   nombre      String
   apellido    String
-  dni         String       @unique
-  email       String       @unique
-  password    String       // almacenado como hash bcrypt
+  dni         String      @unique
+  email       String      @unique
+  password    String      // almacenado como hash bcrypt
   rol         Rol
-  tipoCliente TipoCliente  @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  tipoCliente TipoCliente @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   reservas    Reserva[]
   colasEspera ColaEspera[]
@@ -92,60 +88,95 @@ model Profesor {
   id       Int    @id @default(autoincrement())
   nombre   String
   apellido String
+  dni      String @unique
 
-  clases Clase[]
+  clasesRecurrentes ClaseRecurrente[]
+  claseInstancias   ClaseInstancia[]
 
-  @@unique([nombre, apellido])
   @@map("profesores")
 }
 
 // ─────────────────────────────────────────
 // AGENDA MENSUAL
-// Agrupa las clases fijas de un mes calendario.
+// Agrupa los patrones recurrentes de un mes calendario.
 // ─────────────────────────────────────────
 
 model AgendaMensual {
-  id     Int     @id @default(autoincrement())
-  mes    Int     // 1–12
+  id     Int    @id @default(autoincrement())
+  mes    Int    // 1–12
   anio   Int
-  clases Clase[]
+
+  clases ClaseRecurrente[]
 
   @@unique([mes, anio])
   @@map("agendas_mensuales")
 }
 
 // ─────────────────────────────────────────
-// CLASE
+// CLASE RECURRENTE
+// Patrón que define una clase que se repite cada semana en un día
+// y hora fijos dentro de una agenda mensual. A partir de este patrón
+// el sistema genera automáticamente las ClaseInstancia del mes.
 // ─────────────────────────────────────────
 
-model Clase {
-  id         Int       @id @default(autoincrement())
-  zona       ZonaClase
-  tipo       TipoClase
-  fecha      DateTime? // solo para ESPONTANEA; en FIJA se usa la agenda
-  horario    DateTime  // fecha+hora de inicio de la clase
+model ClaseRecurrente {
+  id        Int       @id @default(autoincrement())
+  diaSemana Int       // 0=domingo, 1=lunes, ..., 6=sábado
+  hora      DateTime  // solo se usa la parte de hora HH:mm
+  zona      ZonaClase
   cupoMaximo Int
-  precio     Decimal   @db.Decimal(10, 2)
-  // Duración siempre 1 hora, no hace falta modelarla como campo
+  duracion  Int       @default(60) // duración en minutos
+  precio    Decimal   @db.Decimal(10, 2)
 
-  // Profesor real asignado a esta clase (tabla Profesor, no Usuario)
   profesorId Int
   profesor   Profesor @relation(fields: [profesorId], references: [id])
 
-  // Solo presente en clases FIJA
-  agendaId Int?
-  agenda   AgendaMensual? @relation(fields: [agendaId], references: [id])
+  agendaId Int
+  agenda   AgendaMensual @relation(fields: [agendaId], references: [id])
 
-  // Código QR único generado al crear la clase (para registrar asistencia)
-  codigoQr String @unique @default(cuid())
+  instancias ClaseInstancia[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@map("clases_recurrentes")
+}
+
+// ─────────────────────────────────────────
+// CLASE INSTANCIA
+// Ocurrencia concreta de una clase en un día y hora específicos.
+// Puede originarse de un patrón recurrente (recurrenteId presente)
+// o crearse de forma suelta sin patrón (recurrenteId null).
+// Si esExcepcion=true, alguno de sus campos difiere del patrón
+// (ej: cambio de profesor urgente) y motivoExcepcion es obligatorio
+// (se valida en la capa de negocio, no en DB).
+// ─────────────────────────────────────────
+
+model ClaseInstancia {
+  id              Int       @id @default(autoincrement())
+  fecha           DateTime  // día y hora concretos de esta clase
+  zona            ZonaClase
+  cupoMaximo      Int
+  duracion        Int       @default(60) // duración en minutos
+  precio          Decimal   @db.Decimal(10, 2)
+  codigoQr        String    @unique @default(cuid())
+  esExcepcion     Boolean   @default(false)
+  motivoExcepcion String?   // obligatorio si esExcepcion=true; se valida en la lógica de negocio
+
+  profesorId Int
+  profesor   Profesor @relation(fields: [profesorId], references: [id])
+
+  recurrenteId Int?              // null si es una instancia suelta (no generada desde un patrón)
+  recurrente   ClaseRecurrente? @relation(fields: [recurrenteId], references: [id])
+
   reservas    Reserva[]
   colasEspera ColaEspera[]
 
-  @@map("clases")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([fecha, profesorId])  // un profesor no puede dar dos clases al mismo tiempo
+
+  @@map("clases_instancias")
 }
 
 // ─────────────────────────────────────────
@@ -160,8 +191,8 @@ model Reserva {
   clienteId Int
   cliente   Usuario @relation(fields: [clienteId], references: [id])
 
-  claseId Int
-  clase   Clase @relation(fields: [claseId], references: [id])
+  instanciaId Int
+  instancia   ClaseInstancia @relation(fields: [instanciaId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -169,7 +200,7 @@ model Reserva {
   pagos      Pago[]
   asistencia Asistencia?
 
-  @@unique([clienteId, claseId]) // un cliente no puede reservar la misma clase dos veces
+  @@unique([clienteId, instanciaId]) // un cliente no puede reservar la misma instancia dos veces
   @@map("reservas")
 }
 
@@ -218,15 +249,15 @@ model ColaEspera {
   posicion Int       // orden en la cola (abonados tienen prioridad)
   expiraEn DateTime? // hasta cuándo tiene para confirmar (5hs desde notificación)
 
-  claseId Int
-  clase   Clase @relation(fields: [claseId], references: [id])
+  instanciaId Int
+  instancia   ClaseInstancia @relation(fields: [instanciaId], references: [id])
 
   clienteId Int
   cliente   Usuario @relation(fields: [clienteId], references: [id])
 
   createdAt DateTime @default(now())
 
-  @@unique([claseId, clienteId])
-  @@unique([claseId, posicion])
+  @@unique([instanciaId, clienteId])
+  @@unique([instanciaId, posicion])
   @@map("cola_espera")
 }

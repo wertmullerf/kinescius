@@ -1,353 +1,369 @@
-import { PrismaClient, TipoClase, ZonaClase, EstadoReserva, MetodoPago, TipoPago } from "@prisma/client";
+/// <reference types="node" />
+import {
+  PrismaClient,
+  ZonaClase,
+  EstadoReserva,
+  MetodoPago,
+  TipoPago,
+} from "@prisma/client";
 import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-// Devuelve la fecha del próximo día de la semana indicado a la hora indicada.
-// dayOfWeek: 0=Dom, 1=Lun, 2=Mar, 3=Mie, 4=Jue, 5=Vie, 6=Sab
+/**
+ * Devuelve todas las fechas del mes indicado (mes: 1–12) cuyo día de semana
+ * coincida con dayOfWeek (0=Dom … 6=Sab), con la hora tomada de `horaRef`.
+ */
+function fechasDelMes(anio: number, mes: number, dayOfWeek: number, horaRef: Date): Date[] {
+  const fechas: Date[] = [];
+  const totalDias = new Date(anio, mes, 0).getDate(); // mes en new Date es 1-indexed aquí: day=0 → último día del mes anterior
+
+  for (let dia = 1; dia <= totalDias; dia++) {
+    const d = new Date(anio, mes - 1, dia);
+    if (d.getDay() === dayOfWeek) {
+      d.setHours(horaRef.getHours(), horaRef.getMinutes(), 0, 0);
+      fechas.push(d);
+    }
+  }
+  return fechas;
+}
+
+/**
+ * Devuelve la fecha del próximo día de la semana indicado a la hora indicada.
+ * dayOfWeek: 0=Dom, 1=Lun … 6=Sab
+ */
 function proximoDia(dayOfWeek: number, hour: number): Date {
   const ahora = new Date();
-  const resultado = new Date(ahora);
-  resultado.setHours(hour, 0, 0, 0);
+  const d = new Date(ahora);
+  d.setHours(hour, 0, 0, 0);
   const diff = (dayOfWeek - ahora.getDay() + 7) % 7 || 7;
-  resultado.setDate(ahora.getDate() + diff);
-  return resultado;
+  d.setDate(ahora.getDate() + diff);
+  return d;
+}
+
+/** Fecha de referencia para almacenar solo la hora en ClaseRecurrente. */
+function horaRef(hour: number): Date {
+  const d = new Date(2000, 0, 1);
+  d.setHours(hour, 0, 0, 0);
+  return d;
 }
 
 async function main() {
   console.log("🌱 Iniciando seed...");
 
-  // ─── 1. Limpiar tablas dependientes (orden inverso a las FK) ────
-  // Esto hace que el seed sea idempotente: podés correrlo N veces sin duplicados
+  // ─── 1. Limpiar tablas dependientes (orden inverso a FK) ────────
+  console.log("  → Limpiando datos previos...");
   await prisma.pago.deleteMany();
   await prisma.asistencia.deleteMany();
   await prisma.colaEspera.deleteMany();
   await prisma.reserva.deleteMany();
-  await prisma.clase.deleteMany();
+  await prisma.claseInstancia.deleteMany();
+  await prisma.claseRecurrente.deleteMany();
   await prisma.agendaMensual.deleteMany();
-  // Usuarios y Profesores usan upsert más abajo, no se borran
 
-  // ─── 2. Usuarios del sistema (upsert por email) ─────────────────
+  // ─── 2. Usuarios (upsert por email) ─────────────────────────────
+  console.log("  → Creando usuarios...");
 
-  const hashAdmin = await bcrypt.hash("admin1234", 10);
+  const hashAdmin    = await bcrypt.hash("admin1234",    10);
   const hashProfesor = await bcrypt.hash("profesor1234", 10);
-  const hashCliente = await bcrypt.hash("cliente1234", 10);
+  const hashCliente  = await bcrypt.hash("cliente1234",  10);
 
-  const admin = await prisma.usuario.upsert({
-    where: { email: "laura@kinesius.com" },
+  await prisma.usuario.upsert({
+    where:  { email: "laura@kinesius.com" },
     update: {},
     create: {
-      nombre: "Laura",
-      apellido: "Admin",
-      dni: "20000001",
-      email: "laura@kinesius.com",
-      password: hashAdmin,
-      rol: "ADMIN",
+      nombre: "Laura", apellido: "Admin", dni: "20000001",
+      email: "laura@kinesius.com", password: hashAdmin, rol: "ADMIN",
     },
   });
 
-  // Cuenta compartida que usan todos los profesores para registrar asistencia
   await prisma.usuario.upsert({
-    where: { email: "profesor@kinesius.com" },
+    where:  { email: "profesor@kinesius.com" },
     update: {},
     create: {
-      nombre: "Profesor",
-      apellido: "Kinesius",
-      dni: "20000002",
-      email: "profesor@kinesius.com",
-      password: hashProfesor,
-      rol: "PROFESOR",
+      nombre: "Profesor", apellido: "Kinesius", dni: "20000002",
+      email: "profesor@kinesius.com", password: hashProfesor, rol: "PROFESOR",
     },
   });
 
   const carlos = await prisma.usuario.upsert({
-    where: { email: "carlos@mail.com" },
+    where:  { email: "carlos@mail.com" },
     update: {},
     create: {
-      nombre: "Carlos",
-      apellido: "García",
-      dni: "30111222",
-      email: "carlos@mail.com",
-      password: hashCliente,
-      rol: "CLIENTE",
-      tipoCliente: "ABONADO",
+      nombre: "Carlos", apellido: "García", dni: "30111222",
+      email: "carlos@mail.com", password: hashCliente,
+      rol: "CLIENTE", tipoCliente: "ABONADO",
     },
   });
 
   const ana = await prisma.usuario.upsert({
-    where: { email: "ana@mail.com" },
+    where:  { email: "ana@mail.com" },
     update: {},
     create: {
-      nombre: "Ana",
-      apellido: "Martínez",
-      dni: "32222333",
-      email: "ana@mail.com",
-      password: hashCliente,
-      rol: "CLIENTE",
-      tipoCliente: "ABONADO",
+      nombre: "Ana", apellido: "Martínez", dni: "32222333",
+      email: "ana@mail.com", password: hashCliente,
+      rol: "CLIENTE", tipoCliente: "ABONADO",
     },
   });
 
   const lucas = await prisma.usuario.upsert({
-    where: { email: "lucas@mail.com" },
+    where:  { email: "lucas@mail.com" },
     update: {},
     create: {
-      nombre: "Lucas",
-      apellido: "Fernández",
-      dni: "35333444",
-      email: "lucas@mail.com",
-      password: hashCliente,
-      rol: "CLIENTE",
-      tipoCliente: "NO_ABONADO",
+      nombre: "Lucas", apellido: "Fernández", dni: "35333444",
+      email: "lucas@mail.com", password: hashCliente,
+      rol: "CLIENTE", tipoCliente: "NO_ABONADO",
     },
   });
 
   const sofia = await prisma.usuario.upsert({
-    where: { email: "sofia@mail.com" },
+    where:  { email: "sofia@mail.com" },
     update: {},
     create: {
-      nombre: "Sofía",
-      apellido: "López",
-      dni: "37444555",
-      email: "sofia@mail.com",
-      password: hashCliente,
-      rol: "CLIENTE",
-      tipoCliente: "NO_ABONADO",
+      nombre: "Sofía", apellido: "López", dni: "37444555",
+      email: "sofia@mail.com", password: hashCliente,
+      rol: "CLIENTE", tipoCliente: "NO_ABONADO",
     },
   });
 
-  console.log("✓ Usuarios creados");
+  console.log("✓ Usuarios listos");
 
-  // ─── 3. Profesores reales (tabla Profesor, upsert por nombre+apellido) ──
+  // ─── 3. Profesores reales (upsert por dni) ──────────────────────
+  console.log("  → Creando profesores...");
 
   const profJuan = await prisma.profesor.upsert({
-    where: { nombre_apellido: { nombre: "Juan", apellido: "Pérez" } },
+    where:  { dni: "27100001" },
     update: {},
-    create: { nombre: "Juan", apellido: "Pérez" },
+    create: { nombre: "Juan", apellido: "Pérez", dni: "27100001" },
   });
 
   const profMaria = await prisma.profesor.upsert({
-    where: { nombre_apellido: { nombre: "María", apellido: "González" } },
+    where:  { dni: "29200002" },
     update: {},
-    create: { nombre: "María", apellido: "González" },
+    create: { nombre: "María", apellido: "González", dni: "29200002" },
   });
 
   const profCarlos = await prisma.profesor.upsert({
-    where: { nombre_apellido: { nombre: "Carlos", apellido: "López" } },
+    where:  { dni: "31300003" },
     update: {},
-    create: { nombre: "Carlos", apellido: "López" },
+    create: { nombre: "Carlos", apellido: "López", dni: "31300003" },
   });
 
-  console.log("✓ Profesores creados");
+  console.log("✓ Profesores listos");
 
-  // ─── 4. Agenda mensual del mes actual ───────────────────────────
+  // ─── 4. Agenda mensual ───────────────────────────────────────────
+  console.log("  → Creando agenda mensual...");
 
-  const hoy = new Date();
-  const agenda = await prisma.agendaMensual.create({
-    data: { mes: hoy.getMonth() + 1, anio: hoy.getFullYear() },
+  const hoy  = new Date();
+  const mes  = hoy.getMonth() + 1; // 1–12
+  const anio = hoy.getFullYear();
+
+  const agenda = await prisma.agendaMensual.upsert({
+    where:  { mes_anio: { mes, anio } },
+    update: {},
+    create: { mes, anio },
   });
 
-  // ─── 5. Clases fijas (6): 2 por zona, distintos días y horarios ─
-  // Precios: ALTA $2000, MEDIA $1500, BAJA $1000
+  console.log(`✓ Agenda ${mes}/${anio} lista`);
 
-  const clasesFijas = await Promise.all([
-    // ALTA
-    prisma.clase.create({
+  // ─── 5. Patrones recurrentes ─────────────────────────────────────
+  console.log("  → Creando patrones recurrentes...");
+
+  const patrones = await Promise.all([
+    prisma.claseRecurrente.create({
       data: {
-        zona: ZonaClase.ALTA,
-        tipo: TipoClase.FIJA,
-        horario: proximoDia(1, 8),  // Lunes 08:00
-        cupoMaximo: 10,
-        precio: 2000,
-        profesorId: profJuan.id,
-        agendaId: agenda.id,
+        diaSemana: 1, hora: horaRef(8),   // Lunes 08:00
+        zona: ZonaClase.ALTA,  cupoMaximo: 10, duracion: 60, precio: 2000,
+        profesorId: profJuan.id, agendaId: agenda.id,
       },
     }),
-    prisma.clase.create({
+    prisma.claseRecurrente.create({
       data: {
-        zona: ZonaClase.ALTA,
-        tipo: TipoClase.FIJA,
-        horario: proximoDia(3, 9),  // Miércoles 09:00
-        cupoMaximo: 10,
-        precio: 2000,
-        profesorId: profMaria.id,
-        agendaId: agenda.id,
+        diaSemana: 3, hora: horaRef(9),   // Miércoles 09:00
+        zona: ZonaClase.ALTA,  cupoMaximo: 10, duracion: 60, precio: 2000,
+        profesorId: profMaria.id, agendaId: agenda.id,
       },
     }),
-    // MEDIA
-    prisma.clase.create({
+    prisma.claseRecurrente.create({
       data: {
-        zona: ZonaClase.MEDIA,
-        tipo: TipoClase.FIJA,
-        horario: proximoDia(1, 10), // Lunes 10:00
-        cupoMaximo: 10,
-        precio: 1500,
-        profesorId: profCarlos.id,
-        agendaId: agenda.id,
+        diaSemana: 1, hora: horaRef(10),  // Lunes 10:00
+        zona: ZonaClase.MEDIA, cupoMaximo: 10, duracion: 60, precio: 1500,
+        profesorId: profCarlos.id, agendaId: agenda.id,
       },
     }),
-    prisma.clase.create({
+    prisma.claseRecurrente.create({
       data: {
-        zona: ZonaClase.MEDIA,
-        tipo: TipoClase.FIJA,
-        horario: proximoDia(5, 16), // Viernes 16:00
-        cupoMaximo: 10,
-        precio: 1500,
-        profesorId: profJuan.id,
-        agendaId: agenda.id,
+        diaSemana: 5, hora: horaRef(16),  // Viernes 16:00
+        zona: ZonaClase.MEDIA, cupoMaximo: 10, duracion: 60, precio: 1500,
+        profesorId: profJuan.id, agendaId: agenda.id,
       },
     }),
-    // BAJA
-    prisma.clase.create({
+    prisma.claseRecurrente.create({
       data: {
-        zona: ZonaClase.BAJA,
-        tipo: TipoClase.FIJA,
-        horario: proximoDia(3, 11), // Miércoles 11:00
-        cupoMaximo: 10,
-        precio: 1000,
-        profesorId: profCarlos.id,
-        agendaId: agenda.id,
+        diaSemana: 3, hora: horaRef(11),  // Miércoles 11:00
+        zona: ZonaClase.BAJA,  cupoMaximo: 10, duracion: 60, precio: 1000,
+        profesorId: profCarlos.id, agendaId: agenda.id,
       },
     }),
-    prisma.clase.create({
+    prisma.claseRecurrente.create({
       data: {
-        zona: ZonaClase.BAJA,
-        tipo: TipoClase.FIJA,
-        horario: proximoDia(5, 18), // Viernes 18:00
-        cupoMaximo: 10,
-        precio: 1000,
-        profesorId: profMaria.id,
-        agendaId: agenda.id,
+        diaSemana: 5, hora: horaRef(18),  // Viernes 18:00
+        zona: ZonaClase.BAJA,  cupoMaximo: 10, duracion: 60, precio: 1000,
+        profesorId: profMaria.id, agendaId: agenda.id,
       },
     }),
   ]);
 
-  // ─── 6. Clases espontáneas (2) ───────────────────────────────────
+  // Índice por id para acceder fácil desde el paso de reservas
+  // patrones[0] = Lunes 08:00    ALTA  Juan
+  // patrones[1] = Miércoles 09:00 ALTA  María
+  // patrones[2] = Lunes 10:00    MEDIA Carlos
+  // patrones[3] = Viernes 16:00  MEDIA Juan
+  // patrones[4] = Miércoles 11:00 BAJA  Carlos
+  // patrones[5] = Viernes 18:00  BAJA  María
+
+  console.log(`✓ ${patrones.length} patrones recurrentes creados`);
+
+  // ─── 6. Instancias del mes (generadas desde patrones) ───────────
+  console.log("  → Generando instancias del mes...");
+
+  let totalInstancias = 0;
+  let saltadas = 0;
+  const primeraInstancia: Record<number, number> = {}; // patronId → instanciaId
+
+  for (const patron of patrones) {
+    const fechas = fechasDelMes(anio, mes, patron.diaSemana, patron.hora);
+
+    for (const fecha of fechas) {
+      try {
+        const inst = await prisma.claseInstancia.create({
+          data: {
+            fecha,
+            zona:         patron.zona,
+            cupoMaximo:   patron.cupoMaximo,
+            duracion:     patron.duracion,
+            precio:       patron.precio,
+            profesorId:   patron.profesorId,
+            recurrenteId: patron.id,
+            esExcepcion:  false,
+          },
+        });
+        totalInstancias++;
+        if (!(patron.id in primeraInstancia)) {
+          primeraInstancia[patron.id] = inst.id;
+        }
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes("Unique constraint")) {
+          console.warn(
+            `    ⚠ Conflicto saltado: profesor ${patron.profesorId} el ${fecha.toLocaleDateString()}`
+          );
+          saltadas++;
+        } else {
+          throw new Error(`Paso 6 — fallo al crear instancia del patrón ${patron.id}: ${msg}`);
+        }
+      }
+    }
+  }
+
+  console.log(`✓ ${totalInstancias} instancias del mes creadas (${saltadas} saltadas por conflicto)`);
+
+  // ─── 7. Instancias sueltas (sin patrón recurrente) ──────────────
+  console.log("  → Creando instancias sueltas...");
 
   await Promise.all([
-    prisma.clase.create({
+    prisma.claseInstancia.create({
       data: {
-        zona: ZonaClase.MEDIA,
-        tipo: TipoClase.ESPONTANEA,
-        fecha: proximoDia(2, 14),   // Martes 14:00
-        horario: proximoDia(2, 14),
-        cupoMaximo: 8,
-        precio: 1500,
-        profesorId: profJuan.id,
+        fecha:        proximoDia(2, 14),  // Próximo martes 14:00
+        zona:         ZonaClase.MEDIA,
+        cupoMaximo:   8,
+        duracion:     60,
+        precio:       1500,
+        profesorId:   profJuan.id,
+        recurrenteId: null,
+        esExcepcion:  false,
       },
     }),
-    prisma.clase.create({
+    prisma.claseInstancia.create({
       data: {
-        zona: ZonaClase.BAJA,
-        tipo: TipoClase.ESPONTANEA,
-        fecha: proximoDia(4, 17),   // Jueves 17:00
-        horario: proximoDia(4, 17),
-        cupoMaximo: 8,
-        precio: 1000,
-        profesorId: profMaria.id,
+        fecha:        proximoDia(4, 17),  // Próximo jueves 17:00
+        zona:         ZonaClase.BAJA,
+        cupoMaximo:   8,
+        duracion:     60,
+        precio:       1000,
+        profesorId:   profMaria.id,
+        recurrenteId: null,
+        esExcepcion:  false,
       },
     }),
   ]);
 
-  console.log("✓ Clases creadas (6 fijas + 2 espontáneas)");
+  console.log("✓ 2 instancias sueltas creadas");
 
-  // Referencias a las clases para las reservas
-  const [claseAltaLun, claseAltaMie, claseMediaLun, , claseBajaLun] = clasesFijas;
-  //      carlos        sofia         ana                  lucas
+  // ─── 8. Reservas ────────────────────────────────────────────────
+  console.log("  → Creando reservas...");
 
-  // ─── 7. Reservas ────────────────────────────────────────────────
+  const instIdAltaLun  = primeraInstancia[patrones[0].id]; // Lunes 08:00 ALTA
+  const instIdAltaMie  = primeraInstancia[patrones[1].id]; // Miércoles 09:00 ALTA
+  const instIdMediaLun = primeraInstancia[patrones[2].id]; // Lunes 10:00 MEDIA
+  const instIdBajaMie  = primeraInstancia[patrones[4].id]; // Miércoles 11:00 BAJA
+
+  if (!instIdAltaLun || !instIdAltaMie || !instIdMediaLun || !instIdBajaMie) {
+    throw new Error(
+      "Paso 8 — no hay instancias disponibles para alguna reserva. " +
+      "El mes actual puede no tener el día de la semana requerido."
+    );
+  }
 
   const reservaCarlos = await prisma.reserva.create({
-    data: {
-      clienteId: carlos.id,
-      claseId: claseAltaLun.id,
-      estado: EstadoReserva.CONFIRMADA,
-      montoPagado: 2000,
-    },
+    data: { clienteId: carlos.id, instanciaId: instIdAltaLun,  estado: EstadoReserva.CONFIRMADA,   montoPagado: 2000 },
   });
-
   const reservaAna = await prisma.reserva.create({
-    data: {
-      clienteId: ana.id,
-      claseId: claseMediaLun.id,
-      estado: EstadoReserva.CONFIRMADA,
-      montoPagado: 1500,
-    },
+    data: { clienteId: ana.id,    instanciaId: instIdMediaLun, estado: EstadoReserva.CONFIRMADA,   montoPagado: 1500 },
   });
-
   const reservaLucas = await prisma.reserva.create({
-    data: {
-      clienteId: lucas.id,
-      claseId: claseBajaLun.id,
-      estado: EstadoReserva.RESERVA_PAGA,
-      montoPagado: 500, // 50% de $1000
-    },
+    data: { clienteId: lucas.id,  instanciaId: instIdBajaMie,  estado: EstadoReserva.RESERVA_PAGA, montoPagado: 500  },
   });
-
   const reservaSofia = await prisma.reserva.create({
-    data: {
-      clienteId: sofia.id,
-      claseId: claseAltaMie.id,
-      estado: EstadoReserva.RESERVA_PAGA,
-      montoPagado: 1000, // 50% de $2000
-    },
+    data: { clienteId: sofia.id,  instanciaId: instIdAltaMie,  estado: EstadoReserva.RESERVA_PAGA, montoPagado: 1000 },
   });
 
   console.log("✓ Reservas creadas");
 
-  // ─── 8. Pagos ────────────────────────────────────────────────────
+  // ─── 9. Pagos ────────────────────────────────────────────────────
+  console.log("  → Creando pagos...");
 
   await Promise.all([
-    // Abonados: pagaron el total como ABONO
-    prisma.pago.create({
-      data: {
-        reservaId: reservaCarlos.id,
-        monto: 2000,
-        metodo: MetodoPago.EFECTIVO,
-        tipo: TipoPago.ABONO,
-      },
-    }),
-    prisma.pago.create({
-      data: {
-        reservaId: reservaAna.id,
-        monto: 1500,
-        metodo: MetodoPago.EFECTIVO,
-        tipo: TipoPago.ABONO,
-      },
-    }),
-    // No abonados: pagaron el 50% como SEÑA
-    prisma.pago.create({
-      data: {
-        reservaId: reservaLucas.id,
-        monto: 500,
-        metodo: MetodoPago.TRANSFERENCIA,
-        tipo: TipoPago.SENA,
-      },
-    }),
-    prisma.pago.create({
-      data: {
-        reservaId: reservaSofia.id,
-        monto: 1000,
-        metodo: MetodoPago.TRANSFERENCIA,
-        tipo: TipoPago.SENA,
-      },
-    }),
+    prisma.pago.create({ data: { reservaId: reservaCarlos.id, monto: 2000, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO } }),
+    prisma.pago.create({ data: { reservaId: reservaAna.id,    monto: 1500, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO } }),
+    prisma.pago.create({ data: { reservaId: reservaLucas.id,  monto: 500,  metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  } }),
+    prisma.pago.create({ data: { reservaId: reservaSofia.id,  monto: 1000, metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  } }),
   ]);
 
   console.log("✓ Pagos creados");
-  console.log("\n✅ Seed completado exitosamente");
-  console.log("\nUsuarios de prueba:");
-  console.log("  ADMIN    → laura@kinesius.com      / admin1234");
-  console.log("  PROFESOR → profesor@kinesius.com   / profesor1234");
-  console.log("  CLIENTE  → carlos@mail.com         / cliente1234 (abonado)");
-  console.log("  CLIENTE  → ana@mail.com            / cliente1234 (abonado)");
-  console.log("  CLIENTE  → lucas@mail.com          / cliente1234 (no abonado)");
-  console.log("  CLIENTE  → sofia@mail.com          / cliente1234 (no abonado)");
+
+  // ─── Resumen ─────────────────────────────────────────────────────
+  console.log(`
+✅ Seed completado exitosamente
+   Agenda:              ${mes}/${anio}
+   Patrones recurrentes: ${patrones.length}
+   Instancias del mes:   ${totalInstancias} (${saltadas} saltadas por conflicto)
+   Instancias sueltas:   2
+   Reservas:             4
+
+Usuarios de prueba:
+  ADMIN    → laura@kinesius.com      / admin1234
+  PROFESOR → profesor@kinesius.com   / profesor1234
+  CLIENTE  → carlos@mail.com         / cliente1234  (abonado)
+  CLIENTE  → ana@mail.com            / cliente1234  (abonado)
+  CLIENTE  → lucas@mail.com          / cliente1234  (no abonado)
+  CLIENTE  → sofia@mail.com          / cliente1234  (no abonado)
+`);
 }
 
 main()
   .catch((e) => {
-    console.error("❌ Error en el seed:", e);
+    console.error("❌ Error en el seed:", e instanceof Error ? e.message : e);
     process.exit(1);
   })
   .finally(async () => {
