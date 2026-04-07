@@ -123,25 +123,3 @@ Luego de correr el seed, los siguientes usuarios están disponibles:
 | CLIENTE | `lucas@mail.com` | `cliente1234` | No abonado |
 | CLIENTE | `sofia@mail.com` | `cliente1234` | No abonado |
 
----
-
-## Estructura del proyecto
-
-```
-src/
-├── app.ts                  # Entry point
-├── config/env.ts           # Variables de entorno centralizadas
-├── db/prisma.ts            # Instancia de PrismaClient
-├── middlewares/            # Validación, auth, etc.
-├── utils/response.ts       # Helpers de respuesta HTTP
-└── modules/
-    ├── clases/
-    ├── reservas/
-    ├── pagos/
-    ├── usuarios/
-    └── reportes/
-prisma/
-├── schema.prisma           # Esquema de la BD
-├── migrations/             # Historial de migraciones
-└── seed.ts                 # Datos de prueba
-```

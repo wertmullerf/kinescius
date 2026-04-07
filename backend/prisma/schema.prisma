@@ -67,9 +67,11 @@ model Usuario {
   email       String      @unique
   password    String      // almacenado como hash bcrypt
   rol         Rol
-  tipoCliente TipoCliente @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  tipoCliente       TipoCliente @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
+  clasesDisponibles Int         @default(0)           // solo aplica cuando rol == CLIENTE; el sistema lo gestiona
+  sancionado        Boolean     @default(false)        // solo aplica cuando rol == CLIENTE y tipoCliente == ABONADO; se levanta con el próximo abono
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
 
   reservas    Reserva[]
   colasEspera ColaEspera[]
@@ -220,7 +222,28 @@ model Pago {
 
   createdAt DateTime @default(now())
 
+  logs PagoLog[]
+
   @@map("pagos")
+}
+
+// ─────────────────────────────────────────
+// PAGO LOG
+// Registra todos los eventos de pago del sistema para auditoría.
+// ─────────────────────────────────────────
+
+model PagoLog {
+  id            Int      @id @default(autoincrement())
+  pagoId        Int
+  pago          Pago     @relation(fields: [pagoId], references: [id])
+  evento        String   // "CREADO", "APROBADO", "REVERTIDO", "FALLIDO", "PENDIENTE"
+  mpPaymentId   String?  // id del pago en MP (si aplica)
+  mpStatus      String?  // status devuelto por MP
+  mpRawResponse Json?    // respuesta cruda de MP para debugging
+  solicitadoPor Int?     // id del usuario que disparó el evento
+  createdAt     DateTime @default(now())
+
+  @@map("pago_logs")
 }
 
 // ─────────────────────────────────────────

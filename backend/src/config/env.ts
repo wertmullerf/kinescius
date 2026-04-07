@@ -21,4 +21,16 @@ export const env = {
     secret: required("JWT_SECRET"),
     expiresIn: process.env.JWT_EXPIRES_IN || "7d",
   },
+  mp: {
+    accessToken:  process.env.MP_ACCESS_TOKEN  || "",
+    webhookSecret: process.env.MP_WEBHOOK_SECRET || "",
+    webhookUrl:   process.env.MP_WEBHOOK_URL   || "",
+    successUrl:   process.env.MP_SUCCESS_URL   || "",
+    failureUrl:   process.env.MP_FAILURE_URL   || "",
+    pendingUrl:   process.env.MP_PENDING_URL   || "",
+  },
+  resend: {
+    apiKey:    process.env.RESEND_API_KEY    || "",
+    fromEmail: process.env.RESEND_FROM_EMAIL || "Kinesius <noreply@kinesius.com>",
+  },
 };

@@ -16,7 +16,7 @@ const prisma = new PrismaClient();
  */
 function fechasDelMes(anio: number, mes: number, dayOfWeek: number, horaRef: Date): Date[] {
   const fechas: Date[] = [];
-  const totalDias = new Date(anio, mes, 0).getDate(); // mes en new Date es 1-indexed aquí: day=0 → último día del mes anterior
+  const totalDias = new Date(anio, mes, 0).getDate();
 
   for (let dia = 1; dia <= totalDias; dia++) {
     const d = new Date(anio, mes - 1, dia);
@@ -53,6 +53,7 @@ async function main() {
 
   // ─── 1. Limpiar tablas dependientes (orden inverso a FK) ────────
   console.log("  → Limpiando datos previos...");
+  await prisma.pagoLog.deleteMany();
   await prisma.pago.deleteMany();
   await prisma.asistencia.deleteMany();
   await prisma.colaEspera.deleteMany();
@@ -86,43 +87,45 @@ async function main() {
     },
   });
 
+  // ABONADO con clases disponibles
   const carlos = await prisma.usuario.upsert({
     where:  { email: "carlos@mail.com" },
-    update: {},
+    update: { clasesDisponibles: 5 },
     create: {
       nombre: "Carlos", apellido: "García", dni: "30111222",
       email: "carlos@mail.com", password: hashCliente,
-      rol: "CLIENTE", tipoCliente: "ABONADO",
+      rol: "CLIENTE", tipoCliente: "ABONADO", clasesDisponibles: 5,
     },
   });
 
   const ana = await prisma.usuario.upsert({
     where:  { email: "ana@mail.com" },
-    update: {},
+    update: { clasesDisponibles: 3 },
     create: {
       nombre: "Ana", apellido: "Martínez", dni: "32222333",
       email: "ana@mail.com", password: hashCliente,
-      rol: "CLIENTE", tipoCliente: "ABONADO",
+      rol: "CLIENTE", tipoCliente: "ABONADO", clasesDisponibles: 3,
     },
   });
 
+  // NO_ABONADO sin clases disponibles
   const lucas = await prisma.usuario.upsert({
     where:  { email: "lucas@mail.com" },
-    update: {},
+    update: { clasesDisponibles: 0 },
     create: {
       nombre: "Lucas", apellido: "Fernández", dni: "35333444",
       email: "lucas@mail.com", password: hashCliente,
-      rol: "CLIENTE", tipoCliente: "NO_ABONADO",
+      rol: "CLIENTE", tipoCliente: "NO_ABONADO", clasesDisponibles: 0,
     },
   });
 
   const sofia = await prisma.usuario.upsert({
     where:  { email: "sofia@mail.com" },
-    update: {},
+    update: { clasesDisponibles: 0 },
     create: {
       nombre: "Sofía", apellido: "López", dni: "37444555",
       email: "sofia@mail.com", password: hashCliente,
-      rol: "CLIENTE", tipoCliente: "NO_ABONADO",
+      rol: "CLIENTE", tipoCliente: "NO_ABONADO", clasesDisponibles: 0,
     },
   });
 
@@ -155,7 +158,7 @@ async function main() {
   console.log("  → Creando agenda mensual...");
 
   const hoy  = new Date();
-  const mes  = hoy.getMonth() + 1; // 1–12
+  const mes  = hoy.getMonth() + 1;
   const anio = hoy.getFullYear();
 
   const agenda = await prisma.agendaMensual.upsert({
@@ -214,7 +217,6 @@ async function main() {
     }),
   ]);
 
-  // Índice por id para acceder fácil desde el paso de reservas
   // patrones[0] = Lunes 08:00    ALTA  Juan
   // patrones[1] = Miércoles 09:00 ALTA  María
   // patrones[2] = Lunes 10:00    MEDIA Carlos
@@ -229,7 +231,7 @@ async function main() {
 
   let totalInstancias = 0;
   let saltadas = 0;
-  const primeraInstancia: Record<number, number> = {}; // patronId → instanciaId
+  const primeraInstancia: Record<number, number> = {};
 
   for (const patron of patrones) {
     const fechas = fechasDelMes(anio, mes, patron.diaSemana, patron.hora);
@@ -316,10 +318,10 @@ async function main() {
   }
 
   const reservaCarlos = await prisma.reserva.create({
-    data: { clienteId: carlos.id, instanciaId: instIdAltaLun,  estado: EstadoReserva.CONFIRMADA,   montoPagado: 2000 },
+    data: { clienteId: carlos.id, instanciaId: instIdAltaLun,  estado: EstadoReserva.CONFIRMADA,   montoPagado: 1600 }, // 20% desc
   });
   const reservaAna = await prisma.reserva.create({
-    data: { clienteId: ana.id,    instanciaId: instIdMediaLun, estado: EstadoReserva.CONFIRMADA,   montoPagado: 1500 },
+    data: { clienteId: ana.id,    instanciaId: instIdMediaLun, estado: EstadoReserva.CONFIRMADA,   montoPagado: 1200 }, // 20% desc
   });
   const reservaLucas = await prisma.reserva.create({
     data: { clienteId: lucas.id,  instanciaId: instIdBajaMie,  estado: EstadoReserva.RESERVA_PAGA, montoPagado: 500  },
@@ -333,29 +335,49 @@ async function main() {
   // ─── 9. Pagos ────────────────────────────────────────────────────
   console.log("  → Creando pagos...");
 
-  await Promise.all([
-    prisma.pago.create({ data: { reservaId: reservaCarlos.id, monto: 2000, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO } }),
-    prisma.pago.create({ data: { reservaId: reservaAna.id,    monto: 1500, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO } }),
-    prisma.pago.create({ data: { reservaId: reservaLucas.id,  monto: 500,  metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  } }),
-    prisma.pago.create({ data: { reservaId: reservaSofia.id,  monto: 1000, metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  } }),
-  ]);
+  const pagoCarlos = await prisma.pago.create({
+    data: { reservaId: reservaCarlos.id, monto: 1600, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO },
+  });
+  const pagoAna = await prisma.pago.create({
+    data: { reservaId: reservaAna.id,    monto: 1200, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO },
+  });
+  const pagoLucas = await prisma.pago.create({
+    data: { reservaId: reservaLucas.id,  monto: 500,  metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  },
+  });
+  const pagoSofia = await prisma.pago.create({
+    data: { reservaId: reservaSofia.id,  monto: 1000, metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  },
+  });
 
   console.log("✓ Pagos creados");
+
+  // ─── 10. PagoLogs ────────────────────────────────────────────────
+  console.log("  → Creando pago logs...");
+
+  await Promise.all([
+    prisma.pagoLog.create({ data: { pagoId: pagoCarlos.id, evento: "CREADO",   solicitadoPor: carlos.id } }),
+    prisma.pagoLog.create({ data: { pagoId: pagoAna.id,    evento: "CREADO",   solicitadoPor: ana.id    } }),
+    prisma.pagoLog.create({ data: { pagoId: pagoLucas.id,  evento: "APROBADO", mpPaymentId: "mp_test_lucas_001", mpStatus: "approved" } }),
+    prisma.pagoLog.create({ data: { pagoId: pagoSofia.id,  evento: "APROBADO", mpPaymentId: "mp_test_sofia_001", mpStatus: "approved" } }),
+  ]);
+
+  console.log("✓ PagoLogs creados");
 
   // ─── Resumen ─────────────────────────────────────────────────────
   console.log(`
 ✅ Seed completado exitosamente
-   Agenda:              ${mes}/${anio}
-   Patrones recurrentes: ${patrones.length}
-   Instancias del mes:   ${totalInstancias} (${saltadas} saltadas por conflicto)
-   Instancias sueltas:   2
-   Reservas:             4
+   Agenda:               ${mes}/${anio}
+   Patrones recurrentes:  ${patrones.length}
+   Instancias del mes:    ${totalInstancias} (${saltadas} saltadas por conflicto)
+   Instancias sueltas:    2
+   Reservas:              4
+   Pagos:                 4
+   PagoLogs:              4
 
 Usuarios de prueba:
   ADMIN    → laura@kinesius.com      / admin1234
   PROFESOR → profesor@kinesius.com   / profesor1234
-  CLIENTE  → carlos@mail.com         / cliente1234  (abonado)
-  CLIENTE  → ana@mail.com            / cliente1234  (abonado)
+  CLIENTE  → carlos@mail.com         / cliente1234  (abonado, 5 clases disponibles)
+  CLIENTE  → ana@mail.com            / cliente1234  (abonado, 3 clases disponibles)
   CLIENTE  → lucas@mail.com          / cliente1234  (no abonado)
   CLIENTE  → sofia@mail.com          / cliente1234  (no abonado)
 `);

@@ -10,6 +10,7 @@ export type {
   ClaseInstancia,
   Reserva,
   Pago,
+  PagoLog,
   Asistencia,
   ColaEspera,
 } from "@prisma/client";
