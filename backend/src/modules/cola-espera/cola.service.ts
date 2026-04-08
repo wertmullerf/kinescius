@@ -3,9 +3,6 @@ import {
   mailColaEsperaNotificacion,
 } from "../../utils/mailer";
 
-// Timers activos de expiración de cola: instanciaId → NodeJS.Timeout
-const timersCola = new Map<number, NodeJS.Timeout>();
-
 export const colaService = {
   /**
    * Agrega un cliente a la cola de espera de una instancia.
@@ -148,29 +145,7 @@ export const colaService = {
       { fecha: primero.instancia.fecha, zona: primero.instancia.zona },
       expiraEn
     );
-
-    // Cancelar timer previo si existe
-    const timerExistente = timersCola.get(instanciaId);
-    if (timerExistente) clearTimeout(timerExistente);
-
-    // Programar expiración automática en 5hs
-    const timer = setTimeout(async () => {
-      timersCola.delete(instanciaId);
-      try {
-        // Si el cliente todavía está en la cola (no reservó), lo eliminamos
-        const aun = await prisma.colaEspera.findUnique({
-          where: { instanciaId_clienteId: { instanciaId, clienteId: primero.cliente.id } },
-        });
-        if (!aun) return; // ya reservó, nada que hacer
-
-        await colaService.salir(instanciaId, primero.cliente.id);
-        // Notificar al siguiente
-        await colaService.notificarPrimero(instanciaId);
-      } catch (err) {
-        console.error("[colaService] Error en expiración de cola:", err);
-      }
-    }, 5 * 60 * 60 * 1000);
-
-    timersCola.set(instanciaId, timer);
+    // La expiración la maneja el cron job (limpiarExpiraciones.ts)
+    // que corre cada 30 minutos y revisa expiraEn en la tabla ColaEspera.
   },
 };

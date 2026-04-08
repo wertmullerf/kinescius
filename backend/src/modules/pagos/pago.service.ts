@@ -1,13 +1,14 @@
 import { prisma } from "../../db/prisma";
 import { actualizarTipoCliente } from "../../utils/actualizarTipoCliente";
-import { crearPreferencia } from "../../utils/mercadopago";
-import { cancelarTimerExpiracion } from "../reservas/reserva.service";
+import { crearPreferencia, obtenerPago } from "../../utils/mercadopago";
 import { colaService } from "../cola-espera/cola.service";
 import { mailReservaConfirmada } from "../../utils/mailer";
 import type { MetodoPago } from "../../types/models";
 
 export const pagoService = {
   // ─── ABONO PRESENCIAL (ADMIN) ──────────────────────────────────────
+  // El admin registra manualmente un abono de un cliente (efectivo o transferencia).
+  // No genera reserva; solo incrementa clasesDisponibles del cliente.
 
   async cargarAbonoPresencial(
     clienteId:      number,
@@ -23,8 +24,6 @@ export const pagoService = {
 
     const nuevasClases = cliente.clasesDisponibles + cantidadClases;
 
-    // El modelo Pago requiere reservaId (FK), por lo que los abonos directos
-    // no generan registro en Pago. La auditoría queda en clasesDisponibles del usuario.
     await prisma.usuario.update({
       where: { id: clienteId },
       data: {
@@ -39,14 +38,17 @@ export const pagoService = {
   },
 
   // ─── ABONO POR MP (CLIENTE) ────────────────────────────────────────
+  // El cliente paga un paquete de clases vía Mercado Pago.
+  // Genera una preferencia y retorna el initPoint para redirigir al cliente.
+  // El acreditado de clases lo hace el webhook cuando MP confirma el pago.
 
   async iniciarAbonoMp(
     clienteId:      number,
     cantidadClases: number,
     monto:          number
   ) {
-    const ts        = Date.now();
-    const extRef    = `abono-${clienteId}-${cantidadClases}-${ts}`;
+    const ts     = Date.now();
+    const extRef = `abono-${clienteId}-${cantidadClases}-${ts}`;
 
     let initPoint = "";
     let mpPrefId  = "";
@@ -62,9 +64,8 @@ export const pagoService = {
           },
         ],
         external_reference: extRef,
-        // Los abonos no expiran automáticamente
       });
-      initPoint = pref.init_point ?? pref.sandbox_init_point ?? "";
+      initPoint = pref.init_point ?? "";
       mpPrefId  = pref.id ?? "";
     } catch (err) {
       console.error("[pagoService] Error generando preferencia abono MP:", err);
@@ -74,6 +75,8 @@ export const pagoService = {
   },
 
   // ─── COMPLEMENTO (ADMIN) ──────────────────────────────────────────
+  // El admin registra el 50% restante que el cliente paga presencialmente.
+  // Solo aplica a reservas en estado RESERVA_PAGA.
 
   async registrarComplemento(
     reservaId:     number,
@@ -82,7 +85,7 @@ export const pagoService = {
     referencia?:   string
   ) {
     const reserva = await prisma.reserva.findUnique({
-      where: { id: reservaId },
+      where:   { id: reservaId },
       include: { instancia: true },
     });
     if (!reserva) throw new Error("Reserva no encontrada");
@@ -93,17 +96,15 @@ export const pagoService = {
     const precioInstancia = Number(reserva.instancia.precio);
     const montoRestante   = precioInstancia - Number(reserva.montoPagado);
 
-    if (montoRestante <= 0) {
-      throw new Error("La reserva ya está completamente pagada");
-    }
+    if (montoRestante <= 0) throw new Error("La reserva ya está completamente pagada");
 
     const [pago] = await prisma.$transaction([
       prisma.pago.create({
         data: {
           reservaId,
-          monto:     montoRestante,
+          monto:      montoRestante,
           metodo,
-          tipo:      "COMPLEMENTO",
+          tipo:       "COMPLEMENTO",
           referencia: referencia ?? null,
         },
       }),
@@ -131,72 +132,90 @@ export const pagoService = {
 
   async listarPorReserva(reservaId: number) {
     return prisma.pago.findMany({
-      where: { reservaId },
+      where:   { reservaId },
       include: { logs: true },
       orderBy: { createdAt: "asc" },
     });
   },
 
-  // ─── WEBHOOK MP ───────────────────────────────────────────────────
+  // ─── WEBHOOK DE MERCADO PAGO ──────────────────────────────────────
+  // Endpoint público (sin auth). MP reintenta si no recibe HTTP 200,
+  // por eso SIEMPRE respondemos 200 aunque falle internamente.
+  //
+  // MP envía dos formatos distintos:
+  //
+  //   Formato A (el más común):
+  //   { "type": "payment", "action": "payment.created|updated", "data": { "id": "123" } }
+  //
+  //   Formato B (legacy IPN):
+  //   { "topic": "payment", "id": "123" }
 
   async procesarWebhook(body: Record<string, unknown>, signature: string) {
-    // Validación de firma HMAC-SHA256
-    //const crypto = await import("crypto");
-    //const secret = (await import("../../utils/mercadopago")).MP_WEBHOOK_SECRET;
-    /*
-    if (secret) {
-      // MP envía x-signature: ts=<ts>,v1=<hash>
-      // Construimos el mensaje: id:<id>;request-id:<xRequestId>;ts:<ts>
-      // Por simplicidad, verificamos el body serializado
-      const payload = JSON.stringify(body);
-      const expected = crypto
-        .createHmac("sha256", secret)
-        .update(payload)
-        .digest("hex");
-      if (signature && !signature.includes(expected)) {
-        // MP puede enviar formato diferente; logueamos pero no bloqueamos en dev
-        console.warn("[webhook] Firma MP no coincide, posible webhook inválido");
+    console.log("[webhook] Body recibido:", JSON.stringify(body), "| x-signature:", signature);
+
+    // ── Extraer el payment ID según el formato recibido ──
+    let paymentId: string | null = null;
+
+    if (body.type === "payment" && body.data) {
+      // Formato A
+      paymentId = (body.data as Record<string, string>)?.id ?? null;
+      const accion = body.action as string;
+      console.log(`[webhook] Formato A — acción: ${accion}, paymentId: ${paymentId}`);
+
+      // Ignorar eventos que no sean de pago creado o actualizado
+      if (accion !== "payment.created" && accion !== "payment.updated") {
+        console.log(`[webhook] Acción "${accion}" ignorada`);
+        return { procesado: false };
       }
+    } else if (body.topic === "payment") {
+      // Formato B (legacy IPN)
+      paymentId = String(body.id ?? "");
+      console.log(`[webhook] Formato B (IPN) — paymentId: ${paymentId}`);
     }
-      */
 
-    const tipo     = body.type as string;
-    const accion   = body.action as string;
-    const dataId   = (body.data as Record<string, string>)?.id;
-
-    if (tipo !== "payment" || accion !== "payment.updated") return { procesado: false };
-
-    // Obtener detalles del pago desde MP via fetch directo
-    let mpData: Record<string, unknown> = {};
-    try {
-      const { env } = await import("../../config/env");
-      const res = await fetch(`https://api.mercadopago.com/v1/payments/${dataId}`, {
-        headers: { Authorization: `Bearer ${env.mp.accessToken}` },
-      });
-      mpData = await res.json() as Record<string, unknown>;
-      if (!res.ok) throw new Error(`MP ${res.status}: ${JSON.stringify(mpData)}`);
-    } catch (err) {
-      console.error("[webhook] Error obteniendo pago de MP:", err);
+    if (!paymentId) {
+      console.log("[webhook] No se pudo extraer el payment ID, ignorando");
       return { procesado: false };
     }
 
-    const status    = mpData.status as string;
-    const extRef    = mpData.external_reference as string;
-    const mpPayId   = String(mpData.id ?? "");
-    const mpStatus  = status;
+    // ── Consultar detalles del pago en MP ──
+    let mpData: Record<string, unknown> = {};
+    try {
+      mpData = await obtenerPago(paymentId);
+    } catch (err) {
+      console.error("[webhook] Error consultando pago en MP:", err);
+      return { procesado: false };
+    }
 
+    const status  = mpData.status as string;
+    const extRef  = mpData.external_reference as string;
+    const mpPayId = String(mpData.id ?? "");
+
+    console.log(`[webhook] Pago de MP — status: ${status}, external_reference: ${extRef}, mpPayId: ${mpPayId}`);
+
+    // ── Derivar según el status y el external_reference ──
     if (status === "approved") {
       if (extRef?.startsWith("sena-")) {
-        await this._aprobarSena(extRef, mpPayId, mpStatus, mpData);
+        await this._aprobarSena(extRef, mpPayId, status, mpData);
       } else if (extRef?.startsWith("abono-")) {
-        await this._aprobarAbono(extRef, mpPayId, mpStatus, mpData);
+        await this._aprobarAbono(extRef, mpPayId, status, mpData);
+      } else {
+        console.log(`[webhook] external_reference desconocido: ${extRef}`);
       }
     } else if (status === "rejected" || status === "cancelled") {
-      await this._rechazarPago(extRef, mpPayId, mpStatus, mpData);
+      await this._rechazarPago(extRef, mpPayId, status, mpData);
+    } else {
+      // pending, in_process, etc. — se espera el siguiente evento
+      console.log(`[webhook] Status "${status}" no requiere acción`);
     }
 
     return { procesado: true };
   },
+
+  // ─── APROBAR SEÑA ─────────────────────────────────────────────────
+  // Llamado cuando MP confirma el pago de una seña.
+  // Crea el registro de Pago y actualiza la Reserva a RESERVA_PAGA.
+  // Es idempotente: si la reserva ya no está en PENDIENTE_PAGO, no hace nada.
 
   async _aprobarSena(
     extRef:   string,
@@ -205,20 +224,29 @@ export const pagoService = {
     mpData:   Record<string, unknown>
   ) {
     const reservaId = Number(extRef.replace("sena-", ""));
-    const reserva   = await prisma.reserva.findUnique({
-      where: { id: reservaId },
-      include: { cliente: true, instancia: true, pagos: true },
-    });
-    if (!reserva || reserva.estado !== "PENDIENTE_PAGO") return;
+    console.log(`[webhook] Procesando aprobación de seña para reservaId: ${reservaId}`);
 
-    const pagoPrincipal = reserva.pagos[0];
-    if (!pagoPrincipal) {
-      console.error(`[webhook] Reserva ${reservaId} sin pago asociado, no se puede aprobar`);
+    const reserva = await prisma.reserva.findUnique({
+      where:   { id: reservaId },
+      include: { cliente: true, instancia: true },
+    });
+
+    if (!reserva) {
+      console.log(`[webhook] Reserva ${reservaId} no encontrada`);
       return;
     }
 
-    const monto = Number(mpData.transaction_amount ?? pagoPrincipal.monto ?? 0);
+    console.log(`[webhook] Reserva encontrada — estado actual: ${reserva.estado}`);
 
+    if (reserva.estado !== "PENDIENTE_PAGO") {
+      console.log(`[webhook] Reserva ${reservaId} ya procesada (estado: ${reserva.estado}), ignorando`);
+      return;
+    }
+
+    const monto = Number(mpData.transaction_amount ?? 0);
+    console.log(`[webhook] ${reserva.estado} → RESERVA_PAGA (monto: $${monto})`);
+
+    // Crear el Pago y actualizar la Reserva en una sola transacción
     const [, pago] = await prisma.$transaction([
       prisma.reserva.update({
         where: { id: reservaId },
@@ -227,10 +255,14 @@ export const pagoService = {
           montoPagado: { increment: monto },
         },
       }),
-      // Actualizar el pago existente de seña (el primero)
-      prisma.pago.update({
-        where: { id: pagoPrincipal.id },
-        data:  { monto, referencia: mpPayId },
+      prisma.pago.create({
+        data: {
+          reservaId,
+          monto,
+          metodo:    "MERCADO_PAGO",
+          tipo:      "SENA",
+          referencia: mpPayId,
+        },
       }),
     ]);
 
@@ -244,14 +276,15 @@ export const pagoService = {
       },
     });
 
-    // Cancelar timer de expiración
-    cancelarTimerExpiracion(reservaId);
-
     await mailReservaConfirmada(
       { nombre: reserva.cliente.nombre, email: reserva.cliente.email },
       { fecha: reserva.instancia.fecha, zona: reserva.instancia.zona }
     );
   },
+
+  // ─── APROBAR ABONO ────────────────────────────────────────────────
+  // Llamado cuando MP confirma el pago de un paquete de clases.
+  // Acredita las clases al cliente.
 
   async _aprobarAbono(
     extRef:   string,
@@ -259,13 +292,16 @@ export const pagoService = {
     mpStatus: string,
     mpData:   Record<string, unknown>
   ) {
-    // extRef: abono-{clienteId}-{cantidadClases}-{ts}
-    const partes        = extRef.split("-");
-    const clienteId     = Number(partes[1]);
+    // extRef format: abono-{clienteId}-{cantidadClases}-{ts}
+    const partes         = extRef.split("-");
+    const clienteId      = Number(partes[1]);
     const cantidadClases = Number(partes[2]);
 
     const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
-    if (!cliente) return;
+    if (!cliente) {
+      console.log(`[webhook] Cliente ${clienteId} no encontrado para abono`);
+      return;
+    }
 
     const nuevasClases = cliente.clasesDisponibles + cantidadClases;
 
@@ -278,9 +314,12 @@ export const pagoService = {
     });
 
     await actualizarTipoCliente(clienteId, nuevasClases);
-    // El log queda en la respuesta del webhook; no hay Pago vinculado a reserva aquí
-    console.log(`[webhook] Abono aprobado para cliente ${clienteId}: +${cantidadClases} clases`);
+    console.log(`[webhook] Abono aprobado — cliente ${clienteId}: +${cantidadClases} clases (total: ${nuevasClases})`);
   },
+
+  // ─── RECHAZAR PAGO ────────────────────────────────────────────────
+  // Llamado cuando MP rechaza o cancela un pago de seña.
+  // Cancela la reserva y notifica al siguiente en la cola de espera.
 
   async _rechazarPago(
     extRef:   string,
@@ -288,30 +327,53 @@ export const pagoService = {
     mpStatus: string,
     mpData:   Record<string, unknown>
   ) {
-    if (extRef?.startsWith("sena-")) {
-      const reservaId = Number(extRef.replace("sena-", ""));
-      const reserva   = await prisma.reserva.findUnique({
-        where: { id: reservaId },
-        include: { pagos: true },
-      });
-      if (!reserva) return;
+    if (!extRef?.startsWith("sena-")) return;
 
-      if (reserva.estado === "PENDIENTE_PAGO") {
-        await prisma.reserva.update({ where: { id: reservaId }, data: { estado: "CANCELADA" } });
-        cancelarTimerExpiracion(reservaId);
-      }
+    const reservaId = Number(extRef.replace("sena-", ""));
+    console.log(`[webhook] Procesando rechazo de pago para reservaId: ${reservaId}`);
 
-      if (reserva.pagos.length > 0) {
-        await prisma.pagoLog.create({
-          data: {
-            pagoId:        reserva.pagos[0].id,
-            evento:        "FALLIDO",
-            mpPaymentId:   mpPayId,
-            mpStatus,
-            mpRawResponse: mpData as never,
-          },
-        });
-      }
+    const reserva = await prisma.reserva.findUnique({
+      where:   { id: reservaId },
+      include: { instancia: true },
+    });
+
+    if (!reserva) {
+      console.log(`[webhook] Reserva ${reservaId} no encontrada`);
+      return;
     }
+
+    if (reserva.estado === "PENDIENTE_PAGO") {
+      await prisma.reserva.update({
+        where: { id: reservaId },
+        data:  { estado: "CANCELADA" },
+      });
+    }
+
+    // Registrar el intento fallido para auditoría
+    const monto = Number(mpData.transaction_amount ?? 0);
+    const pago  = await prisma.pago.create({
+      data: {
+        reservaId,
+        monto,
+        metodo:    "MERCADO_PAGO",
+        tipo:      "SENA",
+        referencia: mpPayId,
+      },
+    });
+
+    await prisma.pagoLog.create({
+      data: {
+        pagoId:        pago.id,
+        evento:        "FALLIDO",
+        mpPaymentId:   mpPayId,
+        mpStatus,
+        mpRawResponse: mpData as never,
+      },
+    });
+
+    console.log(`[webhook] Reserva ${reservaId} cancelada — pago ${mpStatus}`);
+
+    // Liberar el cupo para el siguiente en la cola
+    await colaService.notificarPrimero(reserva.instancia.id);
   },
 };

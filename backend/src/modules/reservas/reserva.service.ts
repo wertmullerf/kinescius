@@ -1,6 +1,6 @@
 import { prisma } from "../../db/prisma";
 import { actualizarTipoCliente } from "../../utils/actualizarTipoCliente";
-import { crearPreferencia, mpRefund } from "../../utils/mercadopago";
+import { crearPreferencia, reembolsarPago } from "../../utils/mercadopago";
 import { colaService } from "../cola-espera/cola.service";
 import type { ZonaClase } from "../../types/models";
 import {
@@ -10,27 +10,16 @@ import {
   mailReembolsoProcesado,
 } from "../../utils/mailer";
 
-// Timers de expiración de reservas pendientes: reservaId → NodeJS.Timeout
-const timersExpiracion = new Map<number, NodeJS.Timeout>();
-
-export function cancelarTimerExpiracion(reservaId: number) {
-  const t = timersExpiracion.get(reservaId);
-  if (t) {
-    clearTimeout(t);
-    timersExpiracion.delete(reservaId);
-  }
-}
-
 export const reservaService = {
   // ─── CREAR RESERVA ────────────────────────────────────────────────
+  // Punto de entrada único para crear una reserva.
+  // Deriva al flujo de abonado o no abonado según el tipo de cliente.
 
   async crear(clienteId: number, instanciaId: number) {
     const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
     if (!cliente) throw new Error("Usuario no encontrado");
 
-    const instancia = await prisma.claseInstancia.findUnique({
-      where: { id: instanciaId },
-    });
+    const instancia = await prisma.claseInstancia.findUnique({ where: { id: instanciaId } });
     if (!instancia) throw new Error("Clase no encontrada");
 
     // ¿Ya tiene reserva activa en esta instancia?
@@ -43,20 +32,21 @@ export const reservaService = {
     });
     if (reservaExistente) throw new Error("Ya tenés una reserva activa en esta clase");
 
-    // Bug 1 fix: contar solo reservas activas, no las CANCELADAS ni COMPLETADAS
-    const reservasActuales = await prisma.reserva.count({
+    // Contar solo reservas activas (excluye CANCELADAS y COMPLETADAS)
+    const cuposOcupados = await prisma.reserva.count({
       where: {
         instanciaId,
         estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
       },
     });
-    const precioInstancia  = Number(instancia.precio);
 
-    // ── Sin cupo → cola de espera ──
-    if (reservasActuales >= instancia.cupoMaximo) {
+    // Sin cupo → cola de espera (no se crea reserva ni se llama a MP)
+    if (cuposOcupados >= instancia.cupoMaximo) {
       const entrada = await colaService.unirse(instanciaId, clienteId);
       return { sinCupo: true, posicionCola: entrada.posicion };
     }
+
+    const precioInstancia = Number(instancia.precio);
 
     if (cliente.tipoCliente === "ABONADO") {
       return await this._crearReservaAbonado(cliente, instancia, precioInstancia);
@@ -65,52 +55,40 @@ export const reservaService = {
     }
   },
 
+  // ─── FLUJO ABONADO ────────────────────────────────────────────────
+  // El abonado ya pagó sus clases al cargar el abono.
+  // Solo se confirma la reserva y se descuenta una clase disponible.
+  // No se crea ningún registro de Pago ni PagoLog en este momento.
+
   async _crearReservaAbonado(
     cliente: { id: number; nombre: string; email: string; clasesDisponibles: number; sancionado: boolean },
     instancia: { id: number; fecha: Date; zona: ZonaClase },
     precioInstancia: number
   ) {
     if (cliente.clasesDisponibles <= 0) {
-      throw new Error(
-        "No tenés clases disponibles. Cargá un abono para poder reservar."
-      );
+      throw new Error("No tenés clases disponibles. Cargá un abono para poder reservar.");
     }
 
     // Descuento 20% si no está sancionado
-    const montoFinal = cliente.sancionado
-      ? precioInstancia
-      : Math.round(precioInstancia * 0.8);
-
+    const montoFinal   = cliente.sancionado ? precioInstancia : Math.round(precioInstancia * 0.8);
     const nuevasClases = cliente.clasesDisponibles - 1;
 
     const [reserva] = await prisma.$transaction([
       prisma.reserva.create({
-        data: { clienteId: cliente.id, instanciaId: instancia.id, estado: "CONFIRMADA", montoPagado: montoFinal },
+        data: {
+          clienteId:   cliente.id,
+          instanciaId: instancia.id,
+          estado:      "CONFIRMADA",
+          montoPagado: montoFinal,
+        },
       }),
       prisma.usuario.update({
         where: { id: cliente.id },
-        data: { clasesDisponibles: nuevasClases },
+        data:  { clasesDisponibles: nuevasClases },
       }),
     ]);
 
     await actualizarTipoCliente(cliente.id, nuevasClases);
-
-    const pago = await prisma.pago.create({
-      data: {
-        reservaId: reserva.id,
-        monto:     montoFinal,
-        metodo:    "EFECTIVO",
-        tipo:      "ABONO",
-      },
-    });
-
-    await prisma.pagoLog.create({
-      data: {
-        pagoId:        pago.id,
-        evento:        "CREADO",
-        solicitadoPor: cliente.id,
-      },
-    });
 
     await mailReservaConfirmada(
       { nombre: cliente.nombre, email: cliente.email },
@@ -120,15 +98,26 @@ export const reservaService = {
     return { reserva, sinCupo: false };
   },
 
+  // ─── FLUJO NO ABONADO ─────────────────────────────────────────────
+  // Crea la reserva en PENDIENTE_PAGO y genera la preferencia de pago en MP.
+  // NO se crea ningún registro en la tabla pagos todavía.
+  // El Pago se crea recién cuando el webhook de MP confirma la aprobación.
+
   async _crearReservaNoAbonado(
     cliente: { id: number; nombre: string; email: string },
     instancia: { id: number; fecha: Date; zona: ZonaClase },
     precioInstancia: number
   ) {
+    // La seña es el 50% del precio
     const monto = Math.round(precioInstancia * 0.5);
 
     const reserva = await prisma.reserva.create({
-      data: { clienteId: cliente.id, instanciaId: instancia.id, estado: "PENDIENTE_PAGO", montoPagado: 0 },
+      data: {
+        clienteId:   cliente.id,
+        instanciaId: instancia.id,
+        estado:      "PENDIENTE_PAGO",
+        montoPagado: 0,
+      },
     });
 
     // Generar preferencia de pago en MP
@@ -146,57 +135,21 @@ export const reservaService = {
           },
         ],
         external_reference: `sena-${reserva.id}`,
-        expiresEnMinutos:   20, // un poco más que el timer de 15 min
+        expiresEnMinutos:   360, // 6hs, alineado con el cron que cancela a las 5hs
       });
-      initPoint = pref.init_point ?? pref.sandbox_init_point ?? "";
+      initPoint = pref.init_point ?? "";
       mpPrefId  = pref.id ?? "";
     } catch (err) {
       console.error("[reservaService] Error generando preferencia MP:", err);
     }
 
-    const pago = await prisma.pago.create({
-      data: {
-        reservaId: reserva.id,
-        monto,
-        metodo:    "TRANSFERENCIA",
-        tipo:      "SENA",
-        referencia: mpPrefId || null,
-      },
-    });
-
-    await prisma.pagoLog.create({
-      data: {
-        pagoId:        pago.id,
-        evento:        "PENDIENTE",
-        solicitadoPor: cliente.id,
-      },
-    });
-
-    // Expiración automática a los 15 minutos
-    const timer = setTimeout(async () => {
-      timersExpiracion.delete(reserva.id);
-      try {
-        const r = await prisma.reserva.findUnique({ where: { id: reserva.id } });
-        if (!r || r.estado !== "PENDIENTE_PAGO") return;
-
-        await prisma.reserva.update({
-          where: { id: reserva.id },
-          data:  { estado: "CANCELADA" },
-        });
-
-        // Bug 2 fix: notificar al cliente y liberar el cupo a la cola
-        await mailReservaCancelada(
-          { nombre: cliente.nombre, email: cliente.email },
-          { fecha: instancia.fecha, zona: instancia.zona },
-          "Tu reserva fue cancelada automáticamente porque no se completó el pago en 15 minutos."
-        );
-        await colaService.notificarPrimero(instancia.id);
-      } catch (e) {
-        console.error("[reservaService] Error en expiración de reserva:", e);
-      }
-    }, 15 * 60 * 1000);
-
-    timersExpiracion.set(reserva.id, timer);
+    // Guardar el id de preferencia en la reserva para referencia futura
+    if (mpPrefId) {
+      await prisma.reserva.update({
+        where: { id: reserva.id },
+        data:  { mpPrefId },
+      });
+    }
 
     await mailReservaPendientePago(
       { nombre: cliente.nombre, email: cliente.email },
@@ -217,7 +170,7 @@ export const reservaService = {
         instancia: {
           include: { profesor: { select: { id: true, nombre: true, apellido: true } } },
         },
-        pagos: { include: { logs: true } },
+        pagos:   { include: { logs: true } },
         cliente: { select: { id: true, nombre: true, apellido: true, email: true } },
       },
       orderBy: { createdAt: "desc" },
@@ -233,8 +186,8 @@ export const reservaService = {
         instancia: {
           include: { profesor: { select: { id: true, nombre: true, apellido: true } } },
         },
-        pagos: { include: { logs: true } },
-        cliente: { select: { id: true, nombre: true, apellido: true, email: true } },
+        pagos:     { include: { logs: true } },
+        cliente:   { select: { id: true, nombre: true, apellido: true, email: true } },
         asistencia: true,
       },
     });
@@ -243,19 +196,20 @@ export const reservaService = {
   },
 
   // ─── CANCELAR RESERVA ─────────────────────────────────────────────
+  // La cancelación siempre notifica la cola de espera al final,
+  // para que el siguiente en la fila tenga la chance de reservar.
 
   async cancelar(reservaId: number, solicitanteId: number) {
     const reserva = await prisma.reserva.findUnique({
       where: { id: reservaId },
       include: {
-        cliente: true,
+        cliente:  true,
         instancia: true,
-        pagos: { include: { logs: true } },
+        pagos:    { include: { logs: true } },
       },
     });
     if (!reserva) throw new Error("Reserva no encontrada");
-
-    if (reserva.estado === "CANCELADA") throw new Error("La reserva ya está cancelada");
+    if (reserva.estado === "CANCELADA")  throw new Error("La reserva ya está cancelada");
     if (reserva.estado === "COMPLETADA") throw new Error("No se puede cancelar una clase completada");
 
     const { cliente, instancia } = reserva;
@@ -267,21 +221,23 @@ export const reservaService = {
     }
   },
 
+  // ─── CANCELACIÓN ABONADO ──────────────────────────────────────────
+  // Con > 48hs: se devuelve la clase al saldo.
+  // Con < 48hs: se aplica sanción, no se devuelve la clase.
+
   async _cancelarAbonado(
-    reserva: { id: number; pagos: Array<{ id: number; logs: Array<{ id: number }> }> },
-    cliente: { id: number; nombre: string; email: string; clasesDisponibles: number },
+    reserva:   { id: number; pagos: Array<{ id: number; logs: Array<{ id: number }> }> },
+    cliente:   { id: number; nombre: string; email: string; clasesDisponibles: number },
     instancia: { id: number; fecha: Date; zona: ZonaClase },
     solicitanteId: number
   ) {
-    const ahora         = Date.now();
-    const msHastaClase  = instancia.fecha.getTime() - ahora;
-    const hs48          = 48 * 60 * 60 * 1000;
-    const conTiempo     = msHastaClase >= hs48;
-
+    const msHastaClase = instancia.fecha.getTime() - Date.now();
+    const hs48         = 48 * 60 * 60 * 1000;
+    const conTiempo    = msHastaClase >= hs48;
     let nota: string | undefined;
 
     if (conTiempo) {
-      // Devolver 1 clase
+      // Devolver 1 clase al saldo
       const nuevasClases = cliente.clasesDisponibles + 1;
       await prisma.$transaction([
         prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } }),
@@ -289,7 +245,7 @@ export const reservaService = {
       ]);
       await actualizarTipoCliente(cliente.id, nuevasClases);
     } else {
-      // No se devuelve la clase, se aplica sanción
+      // Sanción: no se devuelve la clase
       nota = "Cancelaste con menos de 48hs de anticipación. La clase no se devuelve a tu saldo.";
       await prisma.$transaction([
         prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } }),
@@ -297,7 +253,7 @@ export const reservaService = {
       ]);
     }
 
-    // PagoLog REVERTIDO en el primer pago
+    // Log de auditoría en el pago del abono (si existe)
     if (reserva.pagos.length > 0) {
       await prisma.pagoLog.create({
         data: {
@@ -318,48 +274,50 @@ export const reservaService = {
     await colaService.notificarPrimero(instancia.id);
   },
 
+  // ─── CANCELACIÓN NO ABONADO ───────────────────────────────────────
+  // PENDIENTE_PAGO: no hay pago que revertir, solo cancelar.
+  // RESERVA_PAGA con > 24hs: reembolso vía MP.
+  // RESERVA_PAGA con < 24hs: pierde la seña.
+
   async _cancelarNoAbonado(
     reserva: {
-      id: number;
+      id:     number;
       estado: string;
-      pagos: Array<{
-        id: number;
-        monto: object;
-        logs: Array<{ mpPaymentId?: string | null }>;
-      }>;
+      pagos:  Array<{ id: number; monto: object; logs: Array<{ mpPaymentId?: string | null }> }>;
     },
-    cliente: { id: number; nombre: string; email: string },
+    cliente:   { id: number; nombre: string; email: string },
     instancia: { id: number; fecha: Date; zona: ZonaClase },
     solicitanteId: number
   ) {
     const { estado, pagos } = reserva;
 
+    // ── Sin pago aún (no llegó a pagar la seña) ──
     if (estado === "PENDIENTE_PAGO") {
-      cancelarTimerExpiracion(reserva.id);
       await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
       await mailReservaCancelada(
         { nombre: cliente.nombre, email: cliente.email },
         { fecha: instancia.fecha, zona: instancia.zona }
       );
+      await colaService.notificarPrimero(instancia.id);
       return;
     }
 
+    // ── Seña pagada: aplicar política de cancelación ──
     if (estado === "RESERVA_PAGA") {
-      const ahora       = Date.now();
-      const msHasta     = instancia.fecha.getTime() - ahora;
-      const hs24        = 24 * 60 * 60 * 1000;
-      const conTiempo   = msHasta >= hs24;
+      const msHasta   = instancia.fecha.getTime() - Date.now();
+      const hs24      = 24 * 60 * 60 * 1000;
+      const conTiempo = msHasta >= hs24;
 
       const pagoPrincipal = pagos[0];
       const mpPaymentId   = pagoPrincipal?.logs.find((l) => l.mpPaymentId)?.mpPaymentId ?? null;
 
-      if (conTiempo) {
-        await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
+      await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
 
-        // Reembolso MP (devolución total)
+      if (conTiempo) {
+        // Reembolso total vía MP
         if (mpPaymentId) {
           try {
-            await mpRefund.total({ payment_id: Number(mpPaymentId) });
+            await reembolsarPago(mpPaymentId);
           } catch (err) {
             console.error("[reservaService] Error procesando reembolso MP:", err);
           }
@@ -379,12 +337,9 @@ export const reservaService = {
             { monto: Number(pagoPrincipal.monto) }
           );
         }
-
-        await colaService.notificarPrimero(instancia.id);
       } else {
+        // Menos de 24hs: pierde la seña
         const nota = "Cancelaste con menos de 24hs de anticipación. Perdés la seña abonada.";
-        await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
-
         if (pagoPrincipal) {
           await prisma.pagoLog.create({
             data: {
@@ -395,21 +350,18 @@ export const reservaService = {
             },
           });
         }
-
         await mailReservaCancelada(
           { nombre: cliente.nombre, email: cliente.email },
           { fecha: instancia.fecha, zona: instancia.zona },
           nota
         );
-
-        // Bug 3 fix: notificar cola aunque el cliente pierda la seña
-        await colaService.notificarPrimero(instancia.id);
       }
 
+      await colaService.notificarPrimero(instancia.id);
       return;
     }
 
-    // Bug 5 fix: estado inesperado — cancelar de todas formas sin lógica de pago
+    // Estado inesperado: cancelar de todas formas sin lógica de pago
     await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
     await mailReservaCancelada(
       { nombre: cliente.nombre, email: cliente.email },

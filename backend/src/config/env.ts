@@ -23,11 +23,13 @@ export const env = {
   },
   mp: {
     accessToken:  process.env.MP_ACCESS_TOKEN  || "",
-    webhookSecret: process.env.MP_WEBHOOK_SECRET || "",
-    webhookUrl:   process.env.MP_WEBHOOK_URL   || "",
+    publicKey:    process.env.MP_PUBLIC_KEY    || "",
+    webhookUrl:   process.env.MP_WEBHOOK_URL?.trim()   || "",
     successUrl:   process.env.MP_SUCCESS_URL   || "",
     failureUrl:   process.env.MP_FAILURE_URL   || "",
     pendingUrl:   process.env.MP_PENDING_URL   || "",
+    // Se deriva automáticamente del token: TEST- → sandbox, APP- → producción
+    isSandbox:    (process.env.MP_ACCESS_TOKEN || "").startsWith("TEST-"),
   },
   resend: {
     apiKey:    process.env.RESEND_API_KEY    || "",

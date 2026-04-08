@@ -1,17 +1,27 @@
-import { MercadoPagoConfig, Payment, PaymentRefund } from "mercadopago";
 import { env } from "../config/env";
 
-// ─── Clientes SDK (para leer pagos y hacer reembolsos) ───────────────────────
-const client = new MercadoPagoConfig({ accessToken: env.mp.accessToken });
+const MP_API = "https://api.mercadopago.com";
 
-export const mpPayment = new Payment(client);
-export const mpRefund  = new PaymentRefund(client);
+function authHeaders() {
+  return {
+    Authorization:  `Bearer ${env.mp.accessToken}`,
+    "Content-Type": "application/json",
+  };
+}
 
-export const MP_WEBHOOK_SECRET = env.mp.webhookSecret;
+async function mpFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const res  = await fetch(`${MP_API}${path}`, init);
+  const data = await res.json() as T;
+  if (!res.ok) {
+    throw Object.assign(
+      new Error(`MP ${res.status} ${path}: ${JSON.stringify(data)}`),
+      { status: res.status, mpData: data }
+    );
+  }
+  return data;
+}
 
-// ─── Creación de preferencias via fetch directo ──────────────────────────────
-// El SDK de Preference tiene problemas de compatibilidad con ciertos planes de
-// cuenta de MP. Usamos fetch directo a la API, igual que la documentación oficial.
+// ─── Preferencias ────────────────────────────────────────────────────────────
 
 interface PreferenceItem {
   id:          string;
@@ -29,10 +39,10 @@ interface CreatePreferenceOptions {
 }
 
 interface PreferenceResponse {
-  id:          string;
-  init_point:  string;
+  id:                 string;
+  init_point:         string;
   sandbox_init_point: string;
-  [key: string]: unknown;
+  [key: string]:      unknown;
 }
 
 export async function crearPreferencia(
@@ -43,50 +53,58 @@ export async function crearPreferencia(
     external_reference: opts.external_reference,
   };
 
-  // back_urls solo si están configuradas.
-  // auto_return solo si success URL es HTTPS — MP rechaza localhost con 400.
   if (env.mp.successUrl && env.mp.failureUrl && env.mp.pendingUrl) {
     body.back_urls = {
       success: env.mp.successUrl,
       failure: env.mp.failureUrl,
       pending: env.mp.pendingUrl,
     };
+    // auto_return solo funciona con HTTPS
     if (env.mp.successUrl.startsWith("https://")) {
       body.auto_return = "approved";
     }
   }
 
-  // notification_url solo si está configurada (necesita URL pública, no localhost)
   if (env.mp.webhookUrl) {
     body.notification_url = env.mp.webhookUrl;
   }
 
-  // Expiración de la preferencia (ej: 20 min para seña, no expira para abono)
   if (opts.expiresEnMinutos) {
     const ahora = new Date();
     const vence = new Date(ahora.getTime() + opts.expiresEnMinutos * 60 * 1000);
-    body.expires               = true;
-    body.expiration_date_from  = ahora.toISOString();
-    body.expiration_date_to    = vence.toISOString();
+    body.expires              = true;
+    body.expiration_date_from = ahora.toISOString();
+    body.expiration_date_to   = vence.toISOString();
   }
 
-  const response = await fetch("https://api.mercadopago.com/checkout/preferences", {
+  const data = await mpFetch<PreferenceResponse>("/checkout/preferences", {
     method:  "POST",
-    headers: {
-      Authorization:  `Bearer ${env.mp.accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
+    headers: authHeaders(),
+    body:    JSON.stringify(body),
   });
 
-  const data = await response.json() as PreferenceResponse;
-
-  if (!response.ok) {
-    throw Object.assign(
-      new Error(`MP Error ${response.status}: ${JSON.stringify(data)}`),
-      { status: response.status, mpData: data }
-    );
+  // En sandbox usar sandbox_init_point; en producción init_point
+  if (env.mp.isSandbox) {
+    data.init_point = data.sandbox_init_point ?? data.init_point;
   }
 
   return data;
+}
+
+// ─── Pagos ───────────────────────────────────────────────────────────────────
+
+export async function obtenerPago(paymentId: string): Promise<Record<string, unknown>> {
+  return mpFetch<Record<string, unknown>>(`/v1/payments/${paymentId}`, {
+    headers: authHeaders(),
+  });
+}
+
+// ─── Reembolsos ──────────────────────────────────────────────────────────────
+
+export async function reembolsarPago(paymentId: string): Promise<void> {
+  await mpFetch(`/v1/payments/${paymentId}/refunds`, {
+    method:  "POST",
+    headers: authHeaders(),
+    body:    JSON.stringify({}),
+  });
 }

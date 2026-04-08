@@ -43,6 +43,7 @@ enum EstadoReserva {
 enum MetodoPago {
   EFECTIVO
   TRANSFERENCIA
+  MERCADO_PAGO
 }
 
 enum TipoPago {
@@ -189,6 +190,7 @@ model Reserva {
   id          Int           @id @default(autoincrement())
   estado      EstadoReserva @default(PENDIENTE_PAGO)
   montoPagado Decimal       @db.Decimal(10, 2) @default(0) // total pagado hasta el momento
+  mpPrefId    String?       // id de la preferencia MP (solo no abonados, mientras PENDIENTE_PAGO)
 
   clienteId Int
   cliente   Usuario @relation(fields: [clienteId], references: [id])
