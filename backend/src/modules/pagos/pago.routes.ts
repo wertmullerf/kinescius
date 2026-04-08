@@ -6,7 +6,23 @@ import { abonoPresencialSchema, abonoMpSchema, complementoSchema } from "./pago.
 
 const router = Router();
 
-// POST /pagos/abono — admin carga abono presencial (ADMIN)
+/**
+ * POST /api/pagos/webhook
+ * Formato nuevo: { type: "payment", action: "payment.created|updated", data: { id: "..." } }
+ *
+ * GET /api/pagos/webhook
+ * Formato IPN: ?topic=payment&id=PAYMENT_ID
+ *
+ * Ambas rutas son públicas y van PRIMERO, antes de cualquier middleware de auth.
+ */
+router.post("/webhook", pagoController.webhookPost);
+router.get("/webhook",  pagoController.webhookGet);
+
+/**
+ * POST /api/pagos/abono
+ * Admin registra un abono presencial (efectivo / transferencia).
+ * Body: { clienteId, cantidadClases, monto, metodo, referencia? }
+ */
 router.post(
   "/abono",
   authenticateToken,
@@ -15,7 +31,12 @@ router.post(
   pagoController.cargarAbono
 );
 
-// POST /pagos/abono/mp — cliente inicia abono por MP (CLIENTE)
+/**
+ * POST /api/pagos/abono/mp
+ * Cliente inicia un abono de clases vía Mercado Pago Checkout Pro.
+ * Body: { cantidadClases, monto }
+ * Response: { initPoint, external_reference, mpPrefId }
+ */
 router.post(
   "/abono/mp",
   authenticateToken,
@@ -24,7 +45,11 @@ router.post(
   pagoController.iniciarAbonoMp
 );
 
-// POST /pagos/complemento/:reservaId — admin registra 50% restante (ADMIN)
+/**
+ * POST /api/pagos/complemento/:reservaId
+ * Admin registra el saldo restante de una reserva con seña pagada.
+ * Body: { metodo, referencia? }
+ */
 router.post(
   "/complemento/:reservaId",
   authenticateToken,
@@ -33,15 +58,15 @@ router.post(
   pagoController.registrarComplemento
 );
 
-// GET /pagos/reserva/:reservaId — ver pagos de una reserva (ADMIN y dueño)
+/**
+ * GET /api/pagos/reserva/:reservaId
+ * Lista los pagos de una reserva. Admin ve cualquiera; cliente solo las propias.
+ */
 router.get(
   "/reserva/:reservaId",
   authenticateToken,
   authorizeRoles("ADMIN", "CLIENTE"),
   pagoController.listarPorReserva
 );
-
-// POST /pagos/webhook — webhook de MP (público, sin auth)
-router.post("/webhook", pagoController.webhook);
 
 export default router;

@@ -1,29 +1,34 @@
+import { MercadoPagoConfig, Preference, Payment, PaymentRefund } from "mercadopago";
+import type { PaymentResponse } from "mercadopago/dist/clients/payment/commonTypes";
 import { env } from "../config/env";
 
-const MP_API = "https://api.mercadopago.com";
+const client = new MercadoPagoConfig({ accessToken: env.mp.accessToken });
 
-function authHeaders() {
-  return {
-    Authorization:  `Bearer ${env.mp.accessToken}`,
-    "Content-Type": "application/json",
-  };
+const preferenceApi = new Preference(client);
+const paymentApi    = new Payment(client);
+const refundApi     = new PaymentRefund(client);
+
+// ─── Tipos exportados ─────────────────────────────────────────────────────────
+
+export type { PaymentResponse };
+
+/**
+ * Snapshot tipado de los campos que persistimos en PagoLog.mpRawResponse.
+ * El index signature [key: string] lo hace compatible con Prisma.InputJsonObject.
+ */
+export interface MpPaymentLog {
+  [key: string]:      string | number | boolean | null;
+  mp_id:              number | null;
+  status:             string | null;
+  status_detail:      string | null;
+  external_reference: string | null;
+  transaction_amount: number | null;
+  date_approved:      string | null;
+  payment_method_id:  string | null;
+  payment_type_id:    string | null;
 }
 
-async function mpFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res  = await fetch(`${MP_API}${path}`, init);
-  const data = await res.json() as T;
-  if (!res.ok) {
-    throw Object.assign(
-      new Error(`MP ${res.status} ${path}: ${JSON.stringify(data)}`),
-      { status: res.status, mpData: data }
-    );
-  }
-  return data;
-}
-
-// ─── Preferencias ────────────────────────────────────────────────────────────
-
-interface PreferenceItem {
+export interface PreferenceItem {
   id:          string;
   title:       string;
   unit_price:  number;
@@ -31,24 +36,40 @@ interface PreferenceItem {
   currency_id: string;
 }
 
-interface CreatePreferenceOptions {
+export interface CreatePreferenceOptions {
   items:              PreferenceItem[];
   external_reference: string;
-  /** Minutos hasta que vence la preferencia. Si se omite, no expira. */
+  /** Minutos hasta que vence la preferencia. */
   expiresEnMinutos?:  number;
 }
 
-interface PreferenceResponse {
-  id:                 string;
-  init_point:         string;
-  sandbox_init_point: string;
-  [key: string]:      unknown;
+export interface PreferenceResult {
+  id:         string;
+  init_point: string;
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Extrae los campos relevantes de PaymentResponse en un objeto Prisma-compatible. */
+export function paymentToLog(p: PaymentResponse): MpPaymentLog {
+  return {
+    mp_id:              p.id                 ?? null,
+    status:             p.status             ?? null,
+    status_detail:      p.status_detail      ?? null,
+    external_reference: p.external_reference ?? null,
+    transaction_amount: p.transaction_amount ?? null,
+    date_approved:      p.date_approved      ?? null,
+    payment_method_id:  p.payment_method_id  ?? null,
+    payment_type_id:    p.payment_type_id    ?? null,
+  };
+}
+
+// ─── Preferencias ─────────────────────────────────────────────────────────────
 
 export async function crearPreferencia(
   opts: CreatePreferenceOptions
-): Promise<PreferenceResponse> {
-  const body: Record<string, unknown> = {
+): Promise<PreferenceResult> {
+  const body: Parameters<typeof preferenceApi.create>[0]["body"] = {
     items:              opts.items,
     external_reference: opts.external_reference,
   };
@@ -59,10 +80,7 @@ export async function crearPreferencia(
       failure: env.mp.failureUrl,
       pending: env.mp.pendingUrl,
     };
-    // auto_return solo funciona con HTTPS
-    if (env.mp.successUrl.startsWith("https://")) {
-      body.auto_return = "approved";
-    }
+    body.auto_return = "approved";
   }
 
   if (env.mp.webhookUrl) {
@@ -71,40 +89,30 @@ export async function crearPreferencia(
 
   if (opts.expiresEnMinutos) {
     const ahora = new Date();
-    const vence = new Date(ahora.getTime() + opts.expiresEnMinutos * 60 * 1000);
+    const vence = new Date(ahora.getTime() + opts.expiresEnMinutos * 60_000);
     body.expires              = true;
     body.expiration_date_from = ahora.toISOString();
     body.expiration_date_to   = vence.toISOString();
   }
 
-  const data = await mpFetch<PreferenceResponse>("/checkout/preferences", {
-    method:  "POST",
-    headers: authHeaders(),
-    body:    JSON.stringify(body),
-  });
+  const pref = await preferenceApi.create({ body });
 
-  // En sandbox usar sandbox_init_point; en producción init_point
-  if (env.mp.isSandbox) {
-    data.init_point = data.sandbox_init_point ?? data.init_point;
-  }
+  console.log(`[MP] Preferencia creada: id=${pref.id} | notification_url=${pref.notification_url ?? "(no seteada)"}`);
 
-  return data;
+  return {
+    id:         pref.id!,
+    init_point: pref.init_point!,
+  };
 }
 
-// ─── Pagos ───────────────────────────────────────────────────────────────────
+// ─── Pagos ────────────────────────────────────────────────────────────────────
 
-export async function obtenerPago(paymentId: string): Promise<Record<string, unknown>> {
-  return mpFetch<Record<string, unknown>>(`/v1/payments/${paymentId}`, {
-    headers: authHeaders(),
-  });
+export async function obtenerPago(paymentId: string): Promise<PaymentResponse> {
+  return paymentApi.get({ id: Number(paymentId) });
 }
 
-// ─── Reembolsos ──────────────────────────────────────────────────────────────
+// ─── Reembolsos ───────────────────────────────────────────────────────────────
 
 export async function reembolsarPago(paymentId: string): Promise<void> {
-  await mpFetch(`/v1/payments/${paymentId}/refunds`, {
-    method:  "POST",
-    headers: authHeaders(),
-    body:    JSON.stringify({}),
-  });
+  await refundApi.create({ payment_id: Number(paymentId) });
 }

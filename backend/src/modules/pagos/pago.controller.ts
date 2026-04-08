@@ -5,7 +5,8 @@ import { prisma } from "../../db/prisma";
 import type { MetodoPago } from "../../types/models";
 
 export const pagoController = {
-  // POST /pagos/abono — abono presencial (ADMIN)
+
+  // POST /api/pagos/abono
   async cargarAbono(req: Request, res: Response, next: NextFunction) {
     try {
       const { clienteId, cantidadClases, monto, metodo, referencia } = req.body;
@@ -23,7 +24,7 @@ export const pagoController = {
     }
   },
 
-  // POST /pagos/abono/mp — iniciar abono por MP (CLIENTE)
+  // POST /api/pagos/abono/mp
   async iniciarAbonoMp(req: Request, res: Response, next: NextFunction) {
     try {
       const { cantidadClases, monto } = req.body;
@@ -38,7 +39,7 @@ export const pagoController = {
     }
   },
 
-  // POST /pagos/complemento/:reservaId — registrar complemento (ADMIN)
+  // POST /api/pagos/complemento/:reservaId
   async registrarComplemento(req: Request, res: Response, next: NextFunction) {
     try {
       const reservaId = Number(req.params.reservaId);
@@ -55,12 +56,11 @@ export const pagoController = {
     }
   },
 
-  // GET /pagos/reserva/:reservaId — ver pagos de una reserva
+  // GET /api/pagos/reserva/:reservaId
   async listarPorReserva(req: Request, res: Response, next: NextFunction) {
     try {
       const reservaId = Number(req.params.reservaId);
 
-      // CLIENTE solo puede ver pagos de sus propias reservas
       if (req.user!.rol === "CLIENTE") {
         const reserva = await prisma.reserva.findUnique({ where: { id: reservaId } });
         if (!reserva || reserva.clienteId !== req.user!.id) {
@@ -76,11 +76,26 @@ export const pagoController = {
     }
   },
 
-  // POST /pagos/webhook — webhook de MP (público)
-  async webhook(req: Request, res: Response, next: NextFunction) {
+  // POST /api/pagos/webhook
+  // MP envía JSON body: { type: "payment", action: "payment.created", data: { id: "..." } }
+  async webhookPost(req: Request, res: Response, next: NextFunction) {
     try {
-      const signature = req.headers["x-signature"] as string ?? "";
-      const resultado = await pagoService.procesarWebhook(req.body, signature);
+      const resultado = await pagoService.procesarWebhookPost(
+        req.body as Record<string, string | object>
+      );
+      ok(res, resultado);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/pagos/webhook
+  // MP envía query params: ?topic=payment&id=PAYMENT_ID  (formato IPN)
+  async webhookGet(req: Request, res: Response, next: NextFunction) {
+    try {
+      const topic     = typeof req.query["topic"] === "string" ? req.query["topic"] : "";
+      const paymentId = typeof req.query["id"]    === "string" ? req.query["id"]    : "";
+      const resultado = await pagoService.procesarWebhookIpn(topic, paymentId);
       ok(res, resultado);
     } catch (err) {
       next(err);
