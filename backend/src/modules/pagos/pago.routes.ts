@@ -59,6 +59,18 @@ router.post(
 );
 
 /**
+ * GET /api/pagos/abonos/:clienteId
+ * Historial de abonos (presenciales y MP) de un cliente.
+ * Rol: ADMIN
+ */
+router.get(
+  "/abonos/:clienteId",
+  authenticateToken,
+  authorizeRoles("ADMIN"),
+  pagoController.listarAbonosPorCliente
+);
+
+/**
  * GET /api/pagos/reserva/:reservaId
  * Lista los pagos de una reserva. Admin ve cualquiera; cliente solo las propias.
  */

@@ -56,6 +56,17 @@ export const pagoController = {
     }
   },
 
+  // GET /api/pagos/abonos/:clienteId  — historial de abonos de un cliente (ADMIN)
+  async listarAbonosPorCliente(req: Request, res: Response, next: NextFunction) {
+    try {
+      const clienteId = Number(req.params.clienteId);
+      const abonos    = await pagoService.listarAbonosPorCliente(clienteId);
+      ok(res, abonos);
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // GET /api/pagos/reserva/:reservaId
   async listarPorReserva(req: Request, res: Response, next: NextFunction) {
     try {

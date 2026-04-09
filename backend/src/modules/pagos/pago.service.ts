@@ -35,7 +35,17 @@ export const pagoService = {
 
     await actualizarTipoCliente(clienteId, nuevasClases);
 
-    return { clienteId, cantidadClases, nuevasClases, monto, metodo };
+    const pagoAbono = await prisma.pagoAbono.create({
+      data: {
+        clienteId,
+        cantidadClases,
+        monto,
+        metodo,
+        referencia: referencia ?? null,
+      },
+    });
+
+    return { clienteId, cantidadClases, nuevasClases, monto, metodo, pagoAbonoId: pagoAbono.id };
   },
 
   // ─── ABONO POR MP (CLIENTE) ───────────────────────────────────────────────
@@ -95,7 +105,7 @@ export const pagoService = {
       }),
       prisma.reserva.update({
         where: { id: reservaId },
-        data:  { montoPagado: { increment: montoRestante }, estado: "COMPLETADA" },
+        data:  { montoPagado: { increment: montoRestante }, estado: "CONFIRMADA" },
       }),
     ]);
 
@@ -104,6 +114,15 @@ export const pagoService = {
     });
 
     return pago;
+  },
+
+  // ─── ABONOS DE UN CLIENTE ─────────────────────────────────────────────────
+
+  async listarAbonosPorCliente(clienteId: number) {
+    return prisma.pagoAbono.findMany({
+      where:   { clienteId },
+      orderBy: { createdAt: "desc" },
+    });
   },
 
   // ─── PAGOS DE UNA RESERVA ─────────────────────────────────────────────────
@@ -259,6 +278,17 @@ export const pagoService = {
     });
 
     await actualizarTipoCliente(clienteId, nuevasClases);
+
+    await prisma.pagoAbono.create({
+      data: {
+        clienteId,
+        cantidadClases,
+        monto:        mpData.transaction_amount ?? 0,
+        metodo:       "MERCADO_PAGO",
+        mpPaymentId:  mpPayId,
+        mpRawResponse: paymentToLog(mpData),
+      },
+    });
   },
 
   // ─── RECHAZAR PAGO ────────────────────────────────────────────────────────

@@ -46,6 +46,18 @@ export const reservaController = {
     }
   },
 
+  async cambiar(req: Request, res: Response, next: NextFunction) {
+    try {
+      const reservaId       = Number(req.params.id);
+      const clienteId       = req.user!.id;
+      const nuevaInstanciaId = Number(req.body.nuevaInstanciaId);
+      const reserva = await reservaService.cambiar(reservaId, clienteId, nuevaInstanciaId);
+      ok(res, reserva, "Clase cambiada correctamente");
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async cancelar(req: Request, res: Response, next: NextFunction) {
     try {
       const id      = Number(req.params.id);

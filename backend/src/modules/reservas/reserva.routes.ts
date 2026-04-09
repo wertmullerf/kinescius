@@ -2,7 +2,7 @@ import { Router } from "express";
 import { authenticateToken, authorizeRoles } from "../../middlewares/auth.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import { reservaController } from "./reserva.controller";
-import { crearReservaSchema } from "./reserva.validation";
+import { crearReservaSchema, cambiarClaseSchema } from "./reserva.validation";
 
 const router = Router();
 
@@ -29,6 +29,15 @@ router.get(
   authenticateToken,
   authorizeRoles("ADMIN", "CLIENTE"),
   reservaController.obtener
+);
+
+// PATCH /reservas/:id/cambiar — cambiar a otra instancia del mismo día y zona (CLIENTE)
+router.patch(
+  "/:id/cambiar",
+  authenticateToken,
+  authorizeRoles("CLIENTE"),
+  validate(cambiarClaseSchema),
+  reservaController.cambiar
 );
 
 // DELETE /reservas/:id — cancelar reserva (ADMIN y dueño)

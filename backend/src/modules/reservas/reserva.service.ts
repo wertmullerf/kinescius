@@ -16,8 +16,8 @@ export const reservaService = {
   // Deriva al flujo de abonado o no abonado según el tipo de cliente.
 
   async crear(clienteId: number, instanciaId: number) {
-    const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
-    if (!cliente) throw new Error("Usuario no encontrado");
+    const cliente   = await prisma.usuario.findUnique({ where: { id: clienteId } });
+    if (!cliente)   throw new Error("Usuario no encontrado");
 
     const instancia = await prisma.claseInstancia.findUnique({ where: { id: instanciaId } });
     if (!instancia) throw new Error("Clase no encontrada");
@@ -32,7 +32,25 @@ export const reservaService = {
     });
     if (reservaExistente) throw new Error("Ya tenés una reserva activa en esta clase");
 
-    // Contar solo reservas activas (excluye CANCELADAS y COMPLETADAS)
+    // ── Prioridad de cola ──────────────────────────────────────────────────────
+    // Si hay alguien en la cola con ventana activa (expiraEn > ahora), ese cupo
+    // está reservado para él. Cualquier otro usuario va directo a la cola.
+    const colaConPrioridad = await prisma.colaEspera.findFirst({
+      where:   { instanciaId, expiraEn: { gt: new Date() } },
+      orderBy: { posicion: "asc" },
+    });
+
+    if (colaConPrioridad && colaConPrioridad.clienteId !== clienteId) {
+      // Este usuario no tiene prioridad — va a la cola (o devuelve su posición si ya está)
+      const yaEnCola = await prisma.colaEspera.findUnique({
+        where: { instanciaId_clienteId: { instanciaId, clienteId } },
+      });
+      if (yaEnCola) return { sinCupo: true, posicionCola: yaEnCola.posicion };
+      const entrada = await colaService.unirse(instanciaId, clienteId);
+      return { sinCupo: true, posicionCola: entrada.posicion };
+    }
+
+    // ── Cupos disponibles ─────────────────────────────────────────────────────
     const cuposOcupados = await prisma.reserva.count({
       where: {
         instanciaId,
@@ -40,18 +58,25 @@ export const reservaService = {
       },
     });
 
-    // Sin cupo → cola de espera (no se crea reserva ni se llama a MP)
     if (cuposOcupados >= instancia.cupoMaximo) {
+      // Sin cupo — si ya está en la cola, devolver su posición
+      const yaEnCola = await prisma.colaEspera.findUnique({
+        where: { instanciaId_clienteId: { instanciaId, clienteId } },
+      });
+      if (yaEnCola) return { sinCupo: true, posicionCola: yaEnCola.posicion };
       const entrada = await colaService.unirse(instanciaId, clienteId);
       return { sinCupo: true, posicionCola: entrada.posicion };
     }
 
+    // Hay cupo — si el usuario venía de la cola, eliminarlo antes de crear la reserva
+    await prisma.colaEspera.deleteMany({ where: { instanciaId, clienteId } });
+
     const precioInstancia = Number(instancia.precio);
 
     if (cliente.tipoCliente === "ABONADO") {
-      return await this._crearReservaAbonado(cliente, instancia, precioInstancia);
+      return this._crearReservaAbonado(cliente, instancia, precioInstancia);
     } else {
-      return await this._crearReservaNoAbonado(cliente, instancia, precioInstancia);
+      return this._crearReservaNoAbonado(cliente, instancia, precioInstancia);
     }
   },
 
@@ -158,6 +183,88 @@ export const reservaService = {
     );
 
     return { reserva, initPoint, sinCupo: false };
+  },
+
+  // ─── CAMBIAR CLASE ────────────────────────────────────────────────
+  // Permite a un cliente mover su reserva a otra instancia del mismo día y zona,
+  // siempre que la nueva instancia tenga cupo libre.
+  //
+  // ABONADO:     se mueve la reserva sin tocar clasesDisponibles (efecto neto: 0 clases perdidas).
+  // NO ABONADO:  se mueve la reserva; la seña (Pago) queda asociada a la nueva instancia via reserva.
+
+  async cambiar(reservaId: number, clienteId: number, nuevaInstanciaId: number) {
+    const reserva = await prisma.reserva.findUnique({
+      where: { id: reservaId },
+      include: {
+        cliente:   true,
+        instancia: true,
+        pagos:     { include: { logs: true } },
+      },
+    });
+    if (!reserva)                              throw new Error("Reserva no encontrada");
+    if (reserva.clienteId !== clienteId)       throw new Error("No tenés permiso para cambiar esta reserva");
+    if (!["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"].includes(reserva.estado)) {
+      throw new Error("Solo se pueden cambiar reservas activas");
+    }
+
+    if (reserva.instanciaId === nuevaInstanciaId) {
+      throw new Error("La nueva clase debe ser diferente a la actual");
+    }
+
+    const nuevaInstancia = await prisma.claseInstancia.findUnique({ where: { id: nuevaInstanciaId } });
+    if (!nuevaInstancia) throw new Error("Clase destino no encontrada");
+
+    // Misma zona
+    if (nuevaInstancia.zona !== reserva.instancia.zona) {
+      throw new Error("El cambio solo está permitido dentro del mismo grupo muscular (zona)");
+    }
+
+    // Mismo día calendario
+    const fechaOrig  = reserva.instancia.fecha;
+    const fechaNueva = nuevaInstancia.fecha;
+    const mismoDia =
+      fechaOrig.getFullYear() === fechaNueva.getFullYear() &&
+      fechaOrig.getMonth()    === fechaNueva.getMonth()    &&
+      fechaOrig.getDate()     === fechaNueva.getDate();
+    if (!mismoDia) throw new Error("El cambio solo está permitido dentro del mismo día");
+
+    // Cupo disponible en la nueva instancia (sin contar la propia reserva del cliente)
+    const cuposOcupados = await prisma.reserva.count({
+      where: {
+        instanciaId: nuevaInstanciaId,
+        estado:      { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
+      },
+    });
+    if (cuposOcupados >= nuevaInstancia.cupoMaximo) {
+      throw new Error("No hay cupos disponibles en la clase destino");
+    }
+
+    // ¿Ya tiene reserva activa en la nueva instancia? (no debería por la partial unique pero por las dudas)
+    const reservaDestino = await prisma.reserva.findFirst({
+      where: {
+        clienteId,
+        instanciaId: nuevaInstanciaId,
+        estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
+      },
+    });
+    if (reservaDestino) throw new Error("Ya tenés una reserva activa en la clase destino");
+
+    // Mover la reserva
+    const reservaActualizada = await prisma.reserva.update({
+      where: { id: reservaId },
+      data:  { instanciaId: nuevaInstanciaId },
+    });
+
+    // Notificar a la cola de la instancia original (se liberó un cupo)
+    await colaService.notificarPrimero(reserva.instanciaId);
+
+    // Enviar confirmación
+    await mailReservaConfirmada(
+      { nombre: reserva.cliente.nombre, email: reserva.cliente.email },
+      { fecha: nuevaInstancia.fecha, zona: nuevaInstancia.zona }
+    );
+
+    return reservaActualizada;
   },
 
   // ─── LISTAR RESERVAS ──────────────────────────────────────────────

@@ -55,6 +55,7 @@ async function main() {
   console.log("  → Limpiando datos previos...");
   await prisma.pagoLog.deleteMany();
   await prisma.pago.deleteMany();
+  await prisma.pagoAbono.deleteMany();
   await prisma.asistencia.deleteMany();
   await prisma.colaEspera.deleteMany();
   await prisma.reserva.deleteMany();
@@ -332,32 +333,56 @@ async function main() {
 
   console.log("✓ Reservas creadas");
 
-  // ─── 9. Pagos ────────────────────────────────────────────────────
-  console.log("  → Creando pagos...");
+  // ─── 9. PagoAbono — historial de packs cargados ─────────────────
+  // Los abonados pagan un pack de clases; ese pago se registra en PagoAbono,
+  // no en Pago (que solo existe para pagos ligados a una reserva concreta).
+  // Carlos tiene 5 clases disponibles + usó 1 para la reserva → compró 6.
+  // Ana tiene 3 clases disponibles + usó 1 para la reserva → compró 4.
+  console.log("  → Creando pagos de abono...");
 
-  const pagoCarlos = await prisma.pago.create({
-    data: { reservaId: reservaCarlos.id, monto: 1600, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO },
-  });
-  const pagoAna = await prisma.pago.create({
-    data: { reservaId: reservaAna.id,    monto: 1200, metodo: MetodoPago.EFECTIVO,      tipo: TipoPago.ABONO },
-  });
+  await Promise.all([
+    prisma.pagoAbono.create({
+      data: {
+        clienteId:      carlos.id,
+        cantidadClases: 6,
+        monto:          12000, // 6 clases × $2000
+        metodo:         MetodoPago.EFECTIVO,
+        referencia:     "Recibo #001",
+      },
+    }),
+    prisma.pagoAbono.create({
+      data: {
+        clienteId:      ana.id,
+        cantidadClases: 4,
+        monto:          6000,  // 4 clases × $1500
+        metodo:         MetodoPago.EFECTIVO,
+        referencia:     "Recibo #002",
+      },
+    }),
+  ]);
+
+  console.log("✓ PagoAbono creados");
+
+  // ─── 10. Pagos de reserva (solo no abonados) ──────────────────────
+  // Los abonados no generan Pago al reservar (descuentan del pack).
+  // Los no abonados pagan una seña del 50% vía MP o transferencia.
+  console.log("  → Creando pagos de seña...");
+
   const pagoLucas = await prisma.pago.create({
-    data: { reservaId: reservaLucas.id,  monto: 500,  metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  },
+    data: { reservaId: reservaLucas.id, monto: 500,  metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA },
   });
   const pagoSofia = await prisma.pago.create({
-    data: { reservaId: reservaSofia.id,  monto: 1000, metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA  },
+    data: { reservaId: reservaSofia.id, monto: 1000, metodo: MetodoPago.TRANSFERENCIA, tipo: TipoPago.SENA },
   });
 
-  console.log("✓ Pagos creados");
+  console.log("✓ Pagos de seña creados");
 
-  // ─── 10. PagoLogs ────────────────────────────────────────────────
+  // ─── 11. PagoLogs ────────────────────────────────────────────────
   console.log("  → Creando pago logs...");
 
   await Promise.all([
-    prisma.pagoLog.create({ data: { pagoId: pagoCarlos.id, evento: "CREADO",   solicitadoPor: carlos.id } }),
-    prisma.pagoLog.create({ data: { pagoId: pagoAna.id,    evento: "CREADO",   solicitadoPor: ana.id    } }),
-    prisma.pagoLog.create({ data: { pagoId: pagoLucas.id,  evento: "APROBADO", mpPaymentId: "mp_test_lucas_001", mpStatus: "approved" } }),
-    prisma.pagoLog.create({ data: { pagoId: pagoSofia.id,  evento: "APROBADO", mpPaymentId: "mp_test_sofia_001", mpStatus: "approved" } }),
+    prisma.pagoLog.create({ data: { pagoId: pagoLucas.id, evento: "APROBADO", mpPaymentId: "mp_test_lucas_001", mpStatus: "approved" } }),
+    prisma.pagoLog.create({ data: { pagoId: pagoSofia.id, evento: "APROBADO", mpPaymentId: "mp_test_sofia_001", mpStatus: "approved" } }),
   ]);
 
   console.log("✓ PagoLogs creados");
@@ -370,16 +395,17 @@ async function main() {
    Instancias del mes:    ${totalInstancias} (${saltadas} saltadas por conflicto)
    Instancias sueltas:    2
    Reservas:              4
-   Pagos:                 4
-   PagoLogs:              4
+   PagoAbono:             2  (Carlos: 6 clases $12.000 · Ana: 4 clases $6.000)
+   Pagos de seña:         2  (Lucas: $500 · Sofía: $1.000)
+   PagoLogs:              2
 
 Usuarios de prueba:
   ADMIN    → laura@kinesius.com      / admin1234
   PROFESOR → profesor@kinesius.com   / profesor1234
   CLIENTE  → carlos@mail.com         / cliente1234  (abonado, 5 clases disponibles)
   CLIENTE  → ana@mail.com            / cliente1234  (abonado, 3 clases disponibles)
-  CLIENTE  → lucas@mail.com          / cliente1234  (no abonado)
-  CLIENTE  → sofia@mail.com          / cliente1234  (no abonado)
+  CLIENTE  → lucas@mail.com          / cliente1234  (no abonado, seña pagada)
+  CLIENTE  → sofia@mail.com          / cliente1234  (no abonado, seña pagada)
 `);
 }
 

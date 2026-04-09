@@ -31,8 +31,9 @@ export const env = {
     // Se deriva automáticamente del token: TEST- → sandbox, APP- → producción
     isSandbox:    (process.env.MP_ACCESS_TOKEN || "").startsWith("TEST-"),
   },
-  resend: {
-    apiKey:    process.env.RESEND_API_KEY    || "",
-    fromEmail: process.env.RESEND_FROM_EMAIL || "Kinesius <noreply@kinesius.com>",
+  mail: {
+    user: process.env.MAIL_USER || "",
+    pass: process.env.MAIL_PASS || "",  // contraseña de aplicación de Gmail (16 caracteres)
+    from: process.env.MAIL_FROM || "",  // ej: "Kinescius <kinescius@gmail.com>"
   },
 };

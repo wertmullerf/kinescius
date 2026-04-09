@@ -74,8 +74,9 @@ model Usuario {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
-  reservas    Reserva[]
-  colasEspera ColaEspera[]
+  reservas      Reserva[]
+  colasEspera   ColaEspera[]
+  abonosPagados PagoAbono[]
 
   @@map("usuarios")
 }
@@ -204,7 +205,9 @@ model Reserva {
   pagos      Pago[]
   asistencia Asistencia?
 
-  @@unique([clienteId, instanciaId]) // un cliente no puede reservar la misma instancia dos veces
+  // Índice único parcial gestionado por migración manual:
+  // UNIQUE (clienteId, instanciaId) WHERE estado NOT IN ('CANCELADA', 'COMPLETADA')
+  // Permite volver a reservar la misma instancia si la reserva anterior fue cancelada.
   @@map("reservas")
 }
 
@@ -285,4 +288,25 @@ model ColaEspera {
   @@unique([instanciaId, clienteId])
   @@unique([instanciaId, posicion])
   @@map("cola_espera")
+}
+
+// ─────────────────────────────────────────
+// PAGO ABONO
+// Registra los abonos cargados a un cliente (presencial o vía MP).
+// Separado de Pago porque los abonos no están ligados a ninguna reserva.
+// ─────────────────────────────────────────
+
+model PagoAbono {
+  id             Int        @id @default(autoincrement())
+  clienteId      Int
+  cliente        Usuario    @relation(fields: [clienteId], references: [id])
+  cantidadClases Int
+  monto          Decimal    @db.Decimal(10, 2)
+  metodo         MetodoPago
+  referencia     String?    // número de recibo, transferencia, etc.
+  mpPaymentId    String?    // id del pago en MP si fue vía webhook
+  mpRawResponse  Json?      // respuesta cruda de MP para debugging
+  createdAt      DateTime   @default(now())
+
+  @@map("pagos_abono")
 }
