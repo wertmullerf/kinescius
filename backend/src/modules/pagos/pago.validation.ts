@@ -3,14 +3,14 @@ import { z } from "zod";
 export const abonoPresencialSchema = z.object({
   clienteId:      z.number().int().positive(),
   cantidadClases: z.number().int().min(1),
-  monto:          z.number().positive(),
+  precioPorClase: z.number().positive(),           // precio base por clase (sin descuento)
   metodo:         z.enum(["EFECTIVO", "TRANSFERENCIA", "MERCADO_PAGO"]),
   referencia:     z.string().optional(),
 });
 
 export const abonoMpSchema = z.object({
   cantidadClases: z.number().int().min(1),
-  monto:          z.number().positive(),
+  precioPorClase: z.number().positive(),           // precio base por clase (sin descuento)
 });
 
 export const complementoSchema = z.object({

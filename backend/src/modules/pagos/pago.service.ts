@@ -7,7 +7,7 @@ import {
   type PaymentResponse,
 } from "../../utils/mercadopago";
 import { colaService } from "../cola-espera/cola.service";
-import { mailReservaConfirmada } from "../../utils/mailer";
+import { mailReservaConfirmada, mailAbonoConfirmado } from "../../utils/mailer";
 import type { MetodoPago } from "../../types/models";
 
 export const pagoService = {
@@ -17,14 +17,18 @@ export const pagoService = {
   async cargarAbonoPresencial(
     clienteId:      number,
     cantidadClases: number,
-    monto:          number,
+    precioPorClase: number,
     metodo:         MetodoPago,
     solicitanteId:  number,
     referencia?:    string
   ) {
     const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
-    if (!cliente)              throw new Error("Cliente no encontrado");
+    if (!cliente)                  throw new Error("Cliente no encontrado");
     if (cliente.rol !== "CLIENTE") throw new Error("El usuario no es un cliente");
+
+    // Cálculo: cantidadClases × precioPorClase, con 20% de descuento si no está sancionado
+    const montoBase  = cantidadClases * precioPorClase;
+    const montoFinal = cliente.sancionado ? montoBase : Math.round(montoBase * 0.8);
 
     const nuevasClases = cliente.clasesDisponibles + cantidadClases;
 
@@ -39,26 +43,34 @@ export const pagoService = {
       data: {
         clienteId,
         cantidadClases,
-        monto,
+        monto:      montoFinal,
         metodo,
         referencia: referencia ?? null,
       },
     });
 
-    return { clienteId, cantidadClases, nuevasClases, monto, metodo, pagoAbonoId: pagoAbono.id };
+    return { clienteId, cantidadClases, nuevasClases, precioPorClase, montoFinal, metodo, pagoAbonoId: pagoAbono.id };
   },
 
   // ─── ABONO POR MP (CLIENTE) ───────────────────────────────────────────────
 
-  async iniciarAbonoMp(clienteId: number, cantidadClases: number, monto: number) {
-    const extRef = `abono-${clienteId}-${cantidadClases}-${Date.now()}`;
+  async iniciarAbonoMp(clienteId: number, cantidadClases: number, precioPorClase: number) {
+    const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
+    if (!cliente) throw new Error("Cliente no encontrado");
+
+    // Cálculo: cantidadClases × precioPorClase, con 20% de descuento si no está sancionado
+    const montoBase  = cantidadClases * precioPorClase;
+    const montoFinal = cliente.sancionado ? montoBase : Math.round(montoBase * 0.8);
+
+    // Codificamos precioPorClase en el extRef para que el webhook pueda reconstruir el desglose
+    const extRef = `abono-${clienteId}-${cantidadClases}-${precioPorClase}-${Date.now()}`;
 
     const pref = await crearPreferencia({
       items: [
         {
           id:          extRef,
           title:       `Abono ${cantidadClases} clases - Kinescius`,
-          unit_price:  monto,
+          unit_price:  montoFinal,
           quantity:    1,
           currency_id: "ARS",
         },
@@ -69,6 +81,7 @@ export const pagoService = {
     return {
       initPoint:          pref.init_point,
       external_reference: extRef,
+      montoFinal,
       mpPrefId:           pref.id,
     };
   },
@@ -263,9 +276,18 @@ export const pagoService = {
     mpStatus: string,
     mpData:   PaymentResponse
   ) {
+    // Idempotencia: si el webhook llega dos veces, no procesar dos veces
+    const yaProcessado = await prisma.pagoAbono.findFirst({ where: { mpPaymentId: mpPayId } });
+    if (yaProcessado) {
+      console.log(`[webhook] Abono ${mpPayId} ya procesado, ignorando`);
+      return;
+    }
+
+    // extRef: "abono-{clienteId}-{cantidadClases}-{precioPorClase}-{timestamp}"
     const partes         = extRef.split("-");
     const clienteId      = Number(partes[1]);
     const cantidadClases = Number(partes[2]);
+    const precioPorClase = Number(partes[3]);
 
     const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
     if (!cliente) return;
@@ -279,16 +301,23 @@ export const pagoService = {
 
     await actualizarTipoCliente(clienteId, nuevasClases);
 
+    const monto = mpData.transaction_amount ?? 0;
+
     await prisma.pagoAbono.create({
       data: {
         clienteId,
         cantidadClases,
-        monto:        mpData.transaction_amount ?? 0,
+        monto,
         metodo:       "MERCADO_PAGO",
         mpPaymentId:  mpPayId,
         mpRawResponse: paymentToLog(mpData),
       },
     });
+
+    await mailAbonoConfirmado(
+      { nombre: cliente.nombre, email: cliente.email },
+      { cantidadClases, precioPorClase, montoTotal: monto }
+    );
   },
 
   // ─── RECHAZAR PAGO ────────────────────────────────────────────────────────

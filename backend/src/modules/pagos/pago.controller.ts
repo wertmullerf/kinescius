@@ -9,11 +9,11 @@ export const pagoController = {
   // POST /api/pagos/abono
   async cargarAbono(req: Request, res: Response, next: NextFunction) {
     try {
-      const { clienteId, cantidadClases, monto, metodo, referencia } = req.body;
+      const { clienteId, cantidadClases, precioPorClase, metodo, referencia } = req.body;
       const resultado = await pagoService.cargarAbonoPresencial(
         Number(clienteId),
         Number(cantidadClases),
-        Number(monto),
+        Number(precioPorClase),
         metodo as MetodoPago,
         req.user!.id,
         referencia
@@ -27,11 +27,11 @@ export const pagoController = {
   // POST /api/pagos/abono/mp
   async iniciarAbonoMp(req: Request, res: Response, next: NextFunction) {
     try {
-      const { cantidadClases, monto } = req.body;
+      const { cantidadClases, precioPorClase } = req.body;
       const resultado = await pagoService.iniciarAbonoMp(
         req.user!.id,
         Number(cantidadClases),
-        Number(monto)
+        Number(precioPorClase)
       );
       created(res, resultado, "Preferencia de pago generada");
     } catch (err) {

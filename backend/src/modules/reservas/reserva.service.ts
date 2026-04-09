@@ -5,7 +5,6 @@ import { colaService } from "../cola-espera/cola.service";
 import type { ZonaClase } from "../../types/models";
 import {
   mailReservaConfirmada,
-  mailReservaPendientePago,
   mailReservaCancelada,
   mailReembolsoProcesado,
 } from "../../utils/mailer";
@@ -68,8 +67,11 @@ export const reservaService = {
       return { sinCupo: true, posicionCola: entrada.posicion };
     }
 
-    // Hay cupo — si el usuario venía de la cola, eliminarlo antes de crear la reserva
-    await prisma.colaEspera.deleteMany({ where: { instanciaId, clienteId } });
+    // Hay cupo — si el usuario venía de la cola, sacarlo correctamente (reordena posiciones)
+    const enCola = await prisma.colaEspera.findUnique({
+      where: { instanciaId_clienteId: { instanciaId, clienteId } },
+    });
+    if (enCola) await colaService.salir(instanciaId, clienteId);
 
     const precioInstancia = Number(instancia.precio);
 
@@ -176,11 +178,11 @@ export const reservaService = {
       });
     }
 
-    await mailReservaPendientePago(
-      { nombre: cliente.nombre, email: cliente.email },
-      { fecha: instancia.fecha, zona: instancia.zona },
-      initPoint
-    );
+    // await mailReservaPendientePago(
+    //   { nombre: cliente.nombre, email: cliente.email },
+    //   { fecha: instancia.fecha, zona: instancia.zona },
+    //   initPoint
+    // );
 
     return { reserva, initPoint, sinCupo: false };
   },

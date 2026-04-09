@@ -84,7 +84,7 @@ export async function mailReservaConfirmada(
     )
   );
 }
-
+/*
 export async function mailReservaPendientePago(
   cliente:  { nombre: string; email: string },
   instancia: { fecha: Date; zona: string },
@@ -110,6 +110,31 @@ export async function mailReservaPendientePago(
          </a>
        </div>
        <p style="color:#9e9e9e;font-size:13px;text-align:center">Si no pagás a tiempo, tu lugar se liberará automáticamente.</p>`
+    )
+  );
+}
+*/
+export async function mailColaEsperaIngreso(
+  cliente:   { nombre: string; email: string },
+  instancia: { fecha: Date; zona: string },
+  posicion:  number
+) {
+  await send(
+    cliente.email,
+    "Estás en la lista de espera — Kinescius",
+    layout(
+      "Te anotamos en la lista de espera",
+      `<p>Hola <strong>${cliente.nombre}</strong>,</p>
+       <p>No había cupo disponible, pero te anotamos en la lista de espera para:</p>
+       <div style="background:${GRIS_SUAVE};padding:16px 20px;border-radius:8px;margin:20px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:#757575;text-transform:uppercase;letter-spacing:1px">Zona · ${instancia.zona}</p>
+         <p style="margin:0;font-size:15px;color:${GRIS_TEXTO};font-weight:600">${formatFecha(instancia.fecha)}</p>
+       </div>
+       <div style="text-align:center;margin:20px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:#757575;text-transform:uppercase;letter-spacing:1px">Tu posición en la lista</p>
+         <p style="margin:0;font-size:42px;font-weight:700;color:${VERDE}">#${posicion}</p>
+       </div>
+       <p style="color:#616161;font-size:14px">Si se libera un lugar, te avisamos por este medio y tendrás <strong>5 horas</strong> para confirmar.</p>`
     )
   );
 }
@@ -156,6 +181,28 @@ export async function mailReservaCancelada(
          ${nota}
        </div>
        <p style="color:#616161;font-size:14px">Si tenés alguna duda, contactanos directamente.</p>`
+    )
+  );
+}
+
+export async function mailAbonoConfirmado(
+  cliente: { nombre: string; email: string },
+  abono:   { cantidadClases: number; precioPorClase: number; montoTotal: number | string }
+) {
+  await send(
+    cliente.email,
+    "Abono confirmado — Kinescius",
+    layout(
+      "¡Tu abono fue acreditado!",
+      `<p>Hola <strong>${cliente.nombre}</strong>,</p>
+       <p>Recibimos tu pago y ya acreditamos las clases en tu cuenta:</p>
+       <div style="background:${VERDE_CLARO};border-left:4px solid ${VERDE};padding:16px 20px;border-radius:0 8px 8px 0;margin:20px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:${VERDE};font-weight:600;text-transform:uppercase;letter-spacing:1px">Clases acreditadas</p>
+         <p style="margin:0 0 12px;font-size:28px;font-weight:700;color:${VERDE}">${abono.cantidadClases}</p>
+         <p style="margin:0 0 4px;font-size:13px;color:${VERDE};font-weight:600;text-transform:uppercase;letter-spacing:1px">Total abonado</p>
+         <p style="margin:0;font-size:18px;font-weight:700;color:${GRIS_TEXTO}">$${abono.montoTotal}</p>
+       </div>
+       <p style="color:#616161;font-size:14px">Ya podés reservar tus clases con descuento del 20%. ¡Nos vemos!</p>`
     )
   );
 }
