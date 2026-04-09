@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  /* Brand */
+  --color-brand-green: #3ccf7b;
+  --color-brand-green-dark: #216558;
+  --color-brand-yellow: #ede624;
+
+  /* Surface */
+  --color-surface: #ffffff;
+  --color-surface-muted: #f5f5f5;
+  --color-surface-border: #e0e0e0;
+
+  /* Text */
+  --color-text-primary: #1a1a1a;
+  --color-text-secondary: #6b7280;
+
+  /* Status */
+  --color-status-pendiente: #f59e0b;
+  --color-status-paga: #3b82f6;
+  --color-status-confirmada: #3ccf7b;
+  --color-status-cancelada: #ef4444;
+  --color-status-completada: #9ca3af;
+
+  /* Typography */
+  --font-family-sans: 'Inter', sans-serif;
+
+  /* Radius */
+  --radius: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-modal: 0 20px 60px rgba(0,0,0,0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #1a1a1a;
+  background: #ffffff;
+}
+
+#root {
+  min-height: 100svh;
+}
