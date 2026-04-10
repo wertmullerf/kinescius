@@ -10,4 +10,7 @@ export const colaApi = {
 
   listar: (instanciaId: number) =>
     get<ColaEspera[]>(`/cola-espera/${instanciaId}`),
+
+  misEntradas: () =>
+    get<ColaEspera[]>('/cola-espera/mias'),
 }

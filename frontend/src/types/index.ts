@@ -96,6 +96,7 @@ export interface ColaEspera {
   instanciaId: number
   clienteId: number
   cliente?: Pick<Usuario, 'id' | 'nombre' | 'apellido' | 'email' | 'tipoCliente'>
+  instancia?: ClaseInstancia
 }
 
 export interface AuthUser {
@@ -119,4 +120,27 @@ export interface ApiResponse<T> {
   data?: T
   message?: string
   error?: string
+}
+
+// Respuesta de POST /reservas — varía según cliente y cupo
+export type CrearReservaResult =
+  | { posicionCola: number }
+  | (Reserva & { initPoint?: string })
+
+export interface AgendaMensual {
+  id: number
+  mes: number
+  anio: number
+}
+
+export interface ClaseRecurrente {
+  id: number
+  diaSemana: number
+  hora: string
+  zona: ZonaClase
+  cupoMaximo: number
+  duracion: number
+  precio: number
+  profesorId: number
+  profesor?: Profesor
 }

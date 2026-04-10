@@ -8,6 +8,8 @@ import {
   UsersIcon,
   UserGroupIcon,
   ClipboardDocumentCheckIcon,
+  CurrencyDollarIcon,
+  Cog6ToothIcon,
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/hooks/useAuth'
@@ -21,13 +23,15 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { label: 'Dashboard',    href: '/dashboard',    icon: HomeIcon,                       roles: ['ADMIN'] },
-  { label: 'Clases',       href: '/clases',       icon: CalendarDaysIcon,               roles: ['ADMIN', 'PROFESOR'] },
-  { label: 'Reservas',     href: '/reservas',     icon: BookmarkIcon,                   roles: ['ADMIN', 'CLIENTE'] },
-  { label: 'Pagos',        href: '/pagos',        icon: CreditCardIcon,                 roles: ['ADMIN'] },
-  { label: 'Usuarios',     href: '/usuarios',     icon: UsersIcon,                      roles: ['ADMIN'] },
-  { label: 'Profesores',   href: '/profesores',   icon: UserGroupIcon,                  roles: ['ADMIN', 'PROFESOR'] },
-  { label: 'Asistencias',  href: '/asistencias',  icon: ClipboardDocumentCheckIcon,     roles: ['ADMIN', 'PROFESOR'] },
+  { label: 'Dashboard',   href: '/dashboard',   icon: HomeIcon,                   roles: ['ADMIN'] },
+  { label: 'Clases',      href: '/clases',      icon: CalendarDaysIcon,           roles: ['ADMIN', 'PROFESOR'] },
+  { label: 'Reservas',    href: '/reservas',    icon: BookmarkIcon,               roles: ['ADMIN', 'CLIENTE'] },
+  { label: 'Abonos',      href: '/abonos',      icon: CurrencyDollarIcon,         roles: ['CLIENTE'] },
+  { label: 'Pagos',          href: '/pagos',          icon: CreditCardIcon,             roles: ['ADMIN'] },
+  { label: 'Usuarios',       href: '/usuarios',       icon: UsersIcon,                  roles: ['ADMIN'] },
+  { label: 'Profesores',     href: '/profesores',     icon: UserGroupIcon,              roles: ['ADMIN'] },
+  { label: 'Asistencias',    href: '/asistencias',    icon: ClipboardDocumentCheckIcon, roles: ['ADMIN', 'PROFESOR'] },
+  { label: 'Configuración',  href: '/configuracion',  icon: Cog6ToothIcon,              roles: ['ADMIN'] },
 ]
 
 interface SidebarProps {
@@ -43,7 +47,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
     <aside className="flex flex-col h-full bg-surface border-r border-surface-border w-64">
       {/* Logo */}
       <div className="flex items-center justify-between px-6 h-16 border-b border-surface-border">
-        <img src="/logo.png" alt="Kinesius" className="h-8" />
+        <img src="/logo.png" alt="Kinesius" className="h-16" />
         {onMobileClose && (
           <button onClick={onMobileClose} className="lg:hidden p-1 text-text-secondary">
             <XMarkIcon className="w-5 h-5" />
@@ -52,7 +56,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {visibleItems.map(item => (
           <NavLink
             key={item.href}
@@ -71,13 +75,34 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
         ))}
       </nav>
 
-      {/* User info at bottom */}
+      {/* User info + clases restantes */}
       {user && (
         <div className="px-4 py-4 border-t border-surface-border">
           <p className="text-xs font-medium text-text-primary truncate">
             {user.nombre} {user.apellido}
           </p>
-          <p className="text-xs text-text-secondary">{user.rol}</p>
+          <p className="text-xs text-text-secondary mt-0.5">{user.rol}</p>
+
+          {/* Badge de clases para abonados */}
+          {user.tipoCliente === 'ABONADO' && (
+            <div className="mt-2.5 flex items-center gap-2 bg-brand-green/10 rounded-lg px-2.5 py-1.5">
+              <div className="w-2 h-2 rounded-full bg-brand-green flex-shrink-0" />
+              <span className="text-xs font-semibold text-brand-green-dark">
+                {user.clasesDisponibles ?? 0}{' '}
+                {(user.clasesDisponibles ?? 0) === 1 ? 'clase' : 'clases'} disponibles
+              </span>
+            </div>
+          )}
+
+          {/* Badge de sanción */}
+          {user.sancionado && (
+            <div className="mt-1.5 flex items-center gap-2 bg-status-cancelada/10 rounded-lg px-2.5 py-1.5">
+              <div className="w-2 h-2 rounded-full bg-status-cancelada flex-shrink-0" />
+              <span className="text-xs font-semibold text-status-cancelada">
+                Cuenta sancionada
+              </span>
+            </div>
+          )}
         </div>
       )}
     </aside>
@@ -85,10 +110,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
 
   return (
     <>
-      {/* Desktop sidebar */}
       <div className="hidden lg:flex h-full">{content}</div>
 
-      {/* Mobile sidebar with slide animation */}
       <AnimatePresence>
         {mobileOpen && (
           <>

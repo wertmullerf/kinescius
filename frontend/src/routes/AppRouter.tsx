@@ -5,9 +5,17 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
+import { ProfesoresPage } from '@/pages/profesores/ProfesoresPage'
+import { ClasesPage } from '@/pages/clases/ClasesPage'
+import { ReservasPage } from '@/pages/reservas/ReservasPage'
+import { ReservasAdminPage } from '@/pages/reservas/ReservasAdminPage'
+import { AbonosPage } from '@/pages/abonos/AbonosPage'
+import { ConfiguracionPage } from '@/pages/configuracion/ConfiguracionPage'
+import { UsuariosPage } from '@/pages/usuarios/UsuariosPage'
+import { PagosPage } from '@/pages/pagos/PagosPage'
+import { AsistenciasPage } from '@/pages/asistencias/AsistenciasPage'
 import type { Rol } from '@/types'
 
-// Páginas placeholder para rutas aún no implementadas
 function PlaceholderPage({ title }: { title: string }) {
   return (
     <div className="flex items-center justify-center h-64">
@@ -16,7 +24,6 @@ function PlaceholderPage({ title }: { title: string }) {
   )
 }
 
-// Spinner mientras se carga la sesión
 function LoadingScreen() {
   return (
     <motion.div
@@ -34,6 +41,12 @@ interface PrivateRouteProps {
   roles?: Rol[]
 }
 
+function ReservasRoute() {
+  const { user } = useAuth()
+  if (!user) return null
+  return user.rol === 'ADMIN' ? <ReservasAdminPage /> : <ReservasPage />
+}
+
 function PrivateRoute({ children, roles }: PrivateRouteProps) {
   const { user, isLoading } = useAuth()
 
@@ -41,7 +54,10 @@ function PrivateRoute({ children, roles }: PrivateRouteProps) {
   if (!user) return <Navigate to="/login" replace />
 
   if (roles && !roles.includes(user.rol)) {
-    return <Navigate to="/dashboard" replace />
+    const fallback = user.rol === 'PROFESOR' ? '/asistencias'
+                   : user.rol === 'CLIENTE'  ? '/reservas'
+                   : '/dashboard'
+    return <Navigate to={fallback} replace />
   }
 
   return <>{children}</>
@@ -51,11 +67,9 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Públicas */}
         <Route path="/login"    element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* Privadas */}
         <Route
           element={
             <PrivateRoute>
@@ -65,24 +79,35 @@ export function AppRouter() {
         >
           <Route index element={<Navigate to="/dashboard" replace />} />
 
-          <Route
-            path="/dashboard"
-            element={
-              <PrivateRoute roles={['ADMIN']}>
-                <DashboardPage />
-              </PrivateRoute>
-            }
+          <Route path="/dashboard"
+            element={<PrivateRoute roles={['ADMIN']}><DashboardPage /></PrivateRoute>}
           />
-
-          <Route path="/clases"      element={<PlaceholderPage title="Clases" />} />
-          <Route path="/reservas"    element={<PlaceholderPage title="Reservas" />} />
-          <Route path="/pagos"       element={<PlaceholderPage title="Pagos" />} />
-          <Route path="/usuarios"    element={<PlaceholderPage title="Usuarios" />} />
-          <Route path="/profesores"  element={<PlaceholderPage title="Profesores" />} />
-          <Route path="/asistencias" element={<PlaceholderPage title="Asistencias" />} />
+          <Route path="/clases"
+            element={<PrivateRoute roles={['ADMIN', 'PROFESOR']}><ClasesPage /></PrivateRoute>}
+          />
+          <Route path="/reservas"
+            element={<PrivateRoute roles={['ADMIN', 'CLIENTE']}><ReservasRoute /></PrivateRoute>}
+          />
+          <Route path="/abonos"
+            element={<PrivateRoute roles={['CLIENTE']}><AbonosPage /></PrivateRoute>}
+          />
+          <Route path="/profesores"
+            element={<PrivateRoute roles={['ADMIN']}><ProfesoresPage /></PrivateRoute>}
+          />
+          <Route path="/configuracion"
+            element={<PrivateRoute roles={['ADMIN']}><ConfiguracionPage /></PrivateRoute>}
+          />
+          <Route path="/pagos"
+            element={<PrivateRoute roles={['ADMIN']}><PagosPage /></PrivateRoute>}
+          />
+          <Route path="/usuarios"
+            element={<PrivateRoute roles={['ADMIN']}><UsuariosPage /></PrivateRoute>}
+          />
+          <Route path="/asistencias"
+            element={<PrivateRoute roles={['ADMIN', 'PROFESOR']}><AsistenciasPage /></PrivateRoute>}
+          />
         </Route>
 
-        {/* Catch-all */}
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>

@@ -14,22 +14,15 @@ import { Button } from '@/components/ui/Button'
 import { fadeInUp, shakeVariants } from '@/utils/animations'
 
 export function LoginPage() {
-  const { login, user } = useAuth()
+  const { login } = useAuth()
   const navigate = useNavigate()
 
-  const [email,       setEmail]       = useState('')
-  const [password,    setPassword]    = useState('')
-  const [showPass,    setShowPass]    = useState(false)
-  const [loading,     setLoading]     = useState(false)
-  const [error,       setError]       = useState('')
-  const [shakeKey,    setShakeKey]    = useState(0)
-
-  // Si ya hay sesión activa, redirigir
-  if (user) {
-    const dest = user.rol === 'PROFESOR' ? '/asistencias' : user.rol === 'CLIENTE' ? '/reservas' : '/dashboard'
-    navigate(dest, { replace: true })
-    return null
-  }
+  const [email,    setEmail]    = useState('')
+  const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
+  const [loading,  setLoading]  = useState(false)
+  const [error,    setError]    = useState('')
+  const [shakeKey, setShakeKey] = useState(0)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -37,8 +30,11 @@ export function LoginPage() {
     setLoading(true)
 
     try {
-      await login(email, password)
-      // La redirección la hace el PrivateRoute en el router
+      // login() devuelve el user directo del response — no esperamos re-render
+      const loggedUser = await login(email, password)
+      if (loggedUser.rol === 'ADMIN')         navigate('/dashboard',   { replace: true })
+      else if (loggedUser.rol === 'PROFESOR') navigate('/asistencias', { replace: true })
+      else                                    navigate('/reservas',     { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar sesión')
       setShakeKey(k => k + 1)
@@ -58,7 +54,6 @@ export function LoginPage() {
           backgroundPosition: 'center',
         }}
       >
-        {/* Overlay degradado */}
         <div className="absolute inset-0 bg-gradient-to-t from-brand-green-dark/90 via-brand-green-dark/40 to-transparent" />
         <div className="relative px-10 pb-12 text-white">
           <h1 className="text-3xl font-bold mb-3 leading-snug">
@@ -72,11 +67,7 @@ export function LoginPage() {
 
       {/* Columna derecha — formulario */}
       <div className="flex-1 flex items-center justify-center px-6 py-12 bg-white">
-        <motion.div
-          {...fadeInUp}
-          className="w-full max-w-sm"
-        >
-          {/* Logo */}
+        <motion.div {...fadeInUp} className="w-full max-w-sm">
           <div className="flex justify-center mb-8">
             <img src="/logo.png" alt="Kinesius" className="h-20" />
           </div>
@@ -113,15 +104,13 @@ export function LoginPage() {
                 >
                   {showPass
                     ? <EyeSlashIcon className="w-5 h-5" />
-                    : <EyeIcon className="w-5 h-5" />
-                  }
+                    : <EyeIcon className="w-5 h-5" />}
                 </button>
               }
               required
               autoComplete="current-password"
             />
 
-            {/* Mensaje de error animado */}
             {error && (
               <motion.p
                 key={shakeKey}

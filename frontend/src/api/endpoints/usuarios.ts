@@ -1,5 +1,16 @@
 import { get, put, del } from '@/api/client'
-import type { Usuario } from '@/types'
+import type { Usuario, EstadoReserva, ZonaClase } from '@/types'
+
+export interface UsuarioAdmin extends Omit<Usuario, 'rol'> {
+  rol: 'ADMIN' | 'PROFESOR' | 'CLIENTE'
+  reservas?: Array<{
+    id: number
+    estado: EstadoReserva
+    montoPagado: number
+    createdAt: string
+    instancia?: { id: number; fecha: string; zona: ZonaClase }
+  }>
+}
 
 export const usuariosApi = {
   listar: (params?: {
@@ -14,17 +25,13 @@ export const usuariosApi = {
           .map(([k, v]) => [k, String(v)])
       )
     ).toString()
-    return get<Usuario[]>(`/usuarios${query ? `?${query}` : ''}`)
+    return get<UsuarioAdmin[]>(`/usuarios${query ? `?${query}` : ''}`)
   },
 
-  obtener: (id: number) => get<Usuario>(`/usuarios/${id}`),
+  obtener: (id: number) => get<UsuarioAdmin>(`/usuarios/${id}`),
 
-  editar: (id: number, data: {
-    nombre: string
-    apellido: string
-    dni: string
-    email: string
-  }) => put<Usuario>(`/usuarios/${id}`, data),
+  editar: (id: number, data: Partial<Pick<UsuarioAdmin, 'nombre' | 'apellido' | 'dni' | 'email' | 'sancionado'>>) =>
+    put<UsuarioAdmin>(`/usuarios/${id}`, data),
 
   eliminar: (id: number) => del<void>(`/usuarios/${id}`),
 }

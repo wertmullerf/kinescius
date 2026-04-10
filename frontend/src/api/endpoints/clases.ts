@@ -1,22 +1,5 @@
 import { get, post, put, patch, del } from '@/api/client'
-import type { ClaseInstancia } from '@/types'
-
-interface AgendaMensual {
-  id: number
-  mes: number
-  anio: number
-}
-
-interface ClaseRecurrente {
-  id: number
-  diaSemana: number
-  hora: string
-  zona: string
-  cupoMaximo: number
-  duracion: number
-  precio: number
-  profesorId: number
-}
+import type { ClaseInstancia, AgendaMensual, ClaseRecurrente, ZonaClase } from '@/types'
 
 export const clasesApi = {
   // Agenda
@@ -33,24 +16,25 @@ export const clasesApi = {
   listarRecurrentes: (agendaId: number) =>
     get<ClaseRecurrente[]>(`/agenda/${agendaId}/recurrentes`),
 
-  crearRecurrente: (agendaId: number, data: Omit<ClaseRecurrente, 'id'>) =>
+  crearRecurrente: (agendaId: number, data: Omit<ClaseRecurrente, 'id' | 'profesor'>) =>
     post<ClaseRecurrente>(`/agenda/${agendaId}/recurrentes`, data),
 
-  editarRecurrente: (agendaId: number, id: number, data: Partial<Omit<ClaseRecurrente, 'id'>>) =>
+  editarRecurrente: (agendaId: number, id: number, data: Partial<Omit<ClaseRecurrente, 'id' | 'profesor'>>) =>
     put<ClaseRecurrente>(`/agenda/${agendaId}/recurrentes/${id}`, data),
 
   eliminarRecurrente: (agendaId: number, id: number) =>
     del<void>(`/agenda/${agendaId}/recurrentes/${id}`),
 
   // Instancias
-  listarInstancias: (agendaId: number, params?: { zona?: string; fecha?: string }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString()
+  listarInstancias: (agendaId: number, params?: { zona?: ZonaClase; fecha?: string }) => {
+    const entries = Object.entries(params ?? {}).filter(([, v]) => v !== undefined)
+    const query = new URLSearchParams(entries as [string, string][]).toString()
     return get<ClaseInstancia[]>(`/agenda/${agendaId}/instancias${query ? `?${query}` : ''}`)
   },
 
   crearSuelta: (data: {
     fecha: string
-    zona: string
+    zona: ZonaClase
     cupoMaximo: number
     duracion: number
     precio: number
