@@ -14,7 +14,12 @@ export const reservaController = {
         ok(res, { posicionCola: posicion }, "No hay cupo disponible. Fuiste agregado a la cola de espera.");
         return;
       }
-      created(res, resultado, "Reserva creada correctamente");
+
+      // Re-fetch con includes para que el frontend reciba la reserva completa (con instancia, profesor, etc.)
+      const r = resultado as { reserva: { id: number }; sinCupo: false; initPoint?: string };
+      const reservaCompleta = await reservaService.obtener(r.reserva.id);
+      const data = { ...reservaCompleta, ...(r.initPoint ? { initPoint: r.initPoint } : {}) };
+      created(res, data, "Reserva creada correctamente");
     } catch (err) {
       next(err);
     }
@@ -22,8 +27,11 @@ export const reservaController = {
 
   async listar(req: Request, res: Response, next: NextFunction) {
     try {
-      const clienteId = req.user!.rol === "ADMIN" ? undefined : req.user!.id;
-      const reservas  = await reservaService.listar(clienteId);
+      const clienteId = req.user!.rol === "ADMIN"
+        ? (req.query.clienteId ? Number(req.query.clienteId) : undefined)
+        : req.user!.id;
+      const instanciaId = req.query.instanciaId ? Number(req.query.instanciaId) : undefined;
+      const reservas    = await reservaService.listar(clienteId, instanciaId);
       ok(res, reservas);
     } catch (err) {
       next(err);
@@ -53,6 +61,18 @@ export const reservaController = {
       const nuevaInstanciaId = Number(req.body.nuevaInstanciaId);
       const reserva = await reservaService.cambiar(reservaId, clienteId, nuevaInstanciaId);
       ok(res, reserva, "Clase cambiada correctamente");
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async obtenerInitPoint(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await reservaService.obtenerInitPoint(
+        Number(req.params.id),
+        req.user!.id
+      );
+      ok(res, data);
     } catch (err) {
       next(err);
     }

@@ -11,6 +11,7 @@ import {
   CurrencyDollarIcon,
   Cog6ToothIcon,
   XMarkIcon,
+  QrCodeIcon,
 } from '@heroicons/react/24/outline'
 import { useAuth } from '@/hooks/useAuth'
 import type { Rol } from '@/types'
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { label: 'Clases',      href: '/clases',      icon: CalendarDaysIcon,           roles: ['ADMIN', 'PROFESOR'] },
   { label: 'Reservas',    href: '/reservas',    icon: BookmarkIcon,               roles: ['ADMIN', 'CLIENTE'] },
   { label: 'Abonos',      href: '/abonos',      icon: CurrencyDollarIcon,         roles: ['CLIENTE'] },
+  { label: 'Dar presente', href: '/dar-presente', icon: QrCodeIcon,               roles: ['CLIENTE'] },
   { label: 'Pagos',          href: '/pagos',          icon: CreditCardIcon,             roles: ['ADMIN'] },
   { label: 'Usuarios',       href: '/usuarios',       icon: UsersIcon,                  roles: ['ADMIN'] },
   { label: 'Profesores',     href: '/profesores',     icon: UserGroupIcon,              roles: ['ADMIN'] },

@@ -8,13 +8,13 @@ const router = Router();
 
 router.get(
   "/",
-  authenticateToken, authorizeRoles("ADMIN", "PROFESOR"),
+  authenticateToken, authorizeRoles("ADMIN", "PROFESOR", "CLIENTE"),
   agendaController.listar
 );
 
 router.get(
   "/:id",
-  authenticateToken, authorizeRoles("ADMIN", "PROFESOR"),
+  authenticateToken, authorizeRoles("ADMIN", "PROFESOR", "CLIENTE"),
   agendaController.obtener
 );
 

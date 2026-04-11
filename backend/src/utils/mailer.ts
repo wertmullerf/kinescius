@@ -207,6 +207,32 @@ export async function mailAbonoConfirmado(
   );
 }
 
+export async function mailRestablecerContrasenia(
+  cliente: { nombre: string; email: string },
+  resetLink: string
+) {
+  await send(
+    cliente.email,
+    "Restablecer contraseña — Kinescius",
+    layout(
+      "Restablecer tu contraseña",
+      `<p>Hola <strong>${cliente.nombre}</strong>,</p>
+       <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta.</p>
+       <div style="text-align:center;margin:28px 0">
+         <a href="${resetLink}"
+            style="background:${VERDE};color:#ffffff;padding:15px 36px;border-radius:8px;
+                   text-decoration:none;font-weight:700;font-size:16px;display:inline-block">
+           Cambiar contraseña →
+         </a>
+       </div>
+       <p style="color:#9e9e9e;font-size:13px;text-align:center">
+         Este enlace expira en <strong>1 hora</strong>.<br>
+         Si no solicitaste este cambio, podés ignorar este correo.
+       </p>`
+    )
+  );
+}
+
 export async function mailReembolsoProcesado(
   cliente: { nombre: string; email: string },
   pago:    { monto: number | string }

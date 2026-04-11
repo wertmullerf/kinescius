@@ -59,6 +59,29 @@ router.post(
 );
 
 /**
+ * GET /api/pagos/abonos
+ * Todos los abonos. Filtro opcional: ?q= (nombre/apellido/email/dni del cliente)
+ * Debe ir ANTES de /abonos/:clienteId
+ */
+router.get(
+  "/abonos",
+  authenticateToken,
+  authorizeRoles("ADMIN"),
+  pagoController.listarAbonos
+);
+
+/**
+ * GET /api/pagos/historial
+ * Todos los pagos de reservas (señas y complementos). Filtro opcional: ?q=
+ */
+router.get(
+  "/historial",
+  authenticateToken,
+  authorizeRoles("ADMIN"),
+  pagoController.listarPagosReserva
+);
+
+/**
  * GET /api/pagos/abonos/:clienteId
  * Historial de abonos (presenciales y MP) de un cliente.
  * Rol: ADMIN

@@ -72,6 +72,9 @@ export function ReservasAdminPage() {
         b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes
       )
       setAgendas(sorted)
+      const now = new Date()
+      const idx = sorted.findIndex(a => a.mes === now.getMonth() + 1 && a.anio === now.getFullYear())
+      setAgendaIdx(idx >= 0 ? idx : 0)
     })
   }, [])
 

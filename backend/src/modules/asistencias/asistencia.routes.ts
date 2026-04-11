@@ -5,6 +5,43 @@ import { asistenciaController } from "./asistencia.controller";
 const router = Router();
 
 /**
+ * GET /api/asistencias
+ * Listado global de asistencias. Filtro opcional: ?q= (nombre/apellido/email del cliente)
+ * Debe ir ANTES de las rutas con parámetros.
+ */
+router.get(
+  "/",
+  authenticateToken,
+  authorizeRoles("ADMIN"),
+  asistenciaController.listarTodas
+);
+
+/**
+ * GET /api/asistencias/mis-clases
+ * Clases propias del profesor (últimos 2 días + próximos 60), con lista de alumnos.
+ * Rol: PROFESOR
+ */
+router.get(
+  "/mis-clases",
+  authenticateToken,
+  authorizeRoles("PROFESOR"),
+  asistenciaController.misClases
+);
+
+/**
+ * POST /api/asistencias/dar-presente
+ * El cliente escanea el QR y da su propio presente.
+ * Solo disponible 2 horas antes de la clase.
+ * Rol: CLIENTE
+ */
+router.post(
+  "/dar-presente",
+  authenticateToken,
+  authorizeRoles("CLIENTE"),
+  asistenciaController.darPresente
+);
+
+/**
  * GET /api/asistencias/qr/:codigoQr
  * Carga la clase a partir del código QR de la instancia.
  * Devuelve la clase con la lista de alumnos reservados y su estado de asistencia.

@@ -2,7 +2,7 @@
 // Docs: https://pris.ly/d/prisma-schema
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "linux-musl-arm64-openssl-1.1.x"]
 }
 
@@ -33,11 +33,11 @@ enum ZonaClase {
 }
 
 enum EstadoReserva {
-  PENDIENTE_PAGO   // no abonado: esperando el 50% de seña
-  RESERVA_PAGA     // no abonado: seña pagada, esperando el resto presencial
-  CONFIRMADA       // abonado: ya pagó el abono, reserva confirmada
+  PENDIENTE_PAGO // no abonado: esperando el 50% de seña
+  RESERVA_PAGA // no abonado: seña pagada, esperando el resto presencial
+  CONFIRMADA // abonado: ya pagó el abono, reserva confirmada
   CANCELADA
-  COMPLETADA       // clase finalizada y asistencia registrada
+  COMPLETADA // clase finalizada y asistencia registrada
 }
 
 enum MetodoPago {
@@ -47,9 +47,9 @@ enum MetodoPago {
 }
 
 enum TipoPago {
-  SENA         // 50% inicial del no abonado
-  COMPLEMENTO  // 50% restante que registra el admin presencialmente
-  ABONO        // pago adelantado del abonado (mínimo 3 clases)
+  SENA // 50% inicial del no abonado
+  COMPLEMENTO // 50% restante que registra el admin presencialmente
+  ABONO // pago adelantado del abonado (mínimo 3 clases)
 }
 
 // ─────────────────────────────────────────
@@ -61,16 +61,16 @@ enum TipoPago {
 // ─────────────────────────────────────────
 
 model Usuario {
-  id          Int         @id @default(autoincrement())
-  nombre      String
-  apellido    String
-  dni         String      @unique
-  email       String      @unique
-  password    String      // almacenado como hash bcrypt
-  rol         Rol
+  id                Int         @id @default(autoincrement())
+  nombre            String
+  apellido          String
+  dni               String      @unique
+  email             String      @unique
+  password          String // almacenado como hash bcrypt
+  rol               Rol
   tipoCliente       TipoCliente @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
-  clasesDisponibles Int         @default(0)           // solo aplica cuando rol == CLIENTE; el sistema lo gestiona
-  sancionado        Boolean     @default(false)        // solo aplica cuando rol == CLIENTE y tipoCliente == ABONADO; se levanta con el próximo abono
+  clasesDisponibles Int         @default(0) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona
+  sancionado        Boolean     @default(false) // solo aplica cuando rol == CLIENTE y tipoCliente == ABONADO; se levanta con el próximo abono
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -106,9 +106,9 @@ model Profesor {
 // ─────────────────────────────────────────
 
 model AgendaMensual {
-  id     Int    @id @default(autoincrement())
-  mes    Int    // 1–12
-  anio   Int
+  id   Int @id @default(autoincrement())
+  mes  Int // 1–12
+  anio Int
 
   clases ClaseRecurrente[]
 
@@ -124,13 +124,13 @@ model AgendaMensual {
 // ─────────────────────────────────────────
 
 model ClaseRecurrente {
-  id        Int       @id @default(autoincrement())
-  diaSemana Int       // 0=domingo, 1=lunes, ..., 6=sábado
-  hora      DateTime  // solo se usa la parte de hora HH:mm
-  zona      ZonaClase
+  id         Int       @id @default(autoincrement())
+  diaSemana  Int // 0=domingo, 1=lunes, ..., 6=sábado
+  hora       DateTime // solo se usa la parte de hora HH:mm
+  zona       ZonaClase
   cupoMaximo Int
-  duracion  Int       @default(60) // duración en minutos
-  precio    Decimal   @db.Decimal(10, 2)
+  duracion   Int       @default(60) // duración en minutos
+  precio     Decimal   @db.Decimal(10, 2)
 
   profesorId Int
   profesor   Profesor @relation(fields: [profesorId], references: [id])
@@ -158,19 +158,19 @@ model ClaseRecurrente {
 
 model ClaseInstancia {
   id              Int       @id @default(autoincrement())
-  fecha           DateTime  // día y hora concretos de esta clase
+  fecha           DateTime // día y hora concretos de esta clase
   zona            ZonaClase
   cupoMaximo      Int
   duracion        Int       @default(60) // duración en minutos
   precio          Decimal   @db.Decimal(10, 2)
   codigoQr        String    @unique @default(cuid())
   esExcepcion     Boolean   @default(false)
-  motivoExcepcion String?   // obligatorio si esExcepcion=true; se valida en la lógica de negocio
+  motivoExcepcion String? // obligatorio si esExcepcion=true; se valida en la lógica de negocio
 
   profesorId Int
   profesor   Profesor @relation(fields: [profesorId], references: [id])
 
-  recurrenteId Int?              // null si es una instancia suelta (no generada desde un patrón)
+  recurrenteId Int? // null si es una instancia suelta (no generada desde un patrón)
   recurrente   ClaseRecurrente? @relation(fields: [recurrenteId], references: [id])
 
   reservas    Reserva[]
@@ -178,8 +178,8 @@ model ClaseInstancia {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@unique([fecha, profesorId])  // un profesor no puede dar dos clases al mismo tiempo
 
+  @@unique([fecha, profesorId]) // un profesor no puede dar dos clases al mismo tiempo
   @@map("clases_instancias")
 }
 
@@ -190,8 +190,8 @@ model ClaseInstancia {
 model Reserva {
   id          Int           @id @default(autoincrement())
   estado      EstadoReserva @default(PENDIENTE_PAGO)
-  montoPagado Decimal       @db.Decimal(10, 2) @default(0) // total pagado hasta el momento
-  mpPrefId    String?       // id de la preferencia MP (solo no abonados, mientras PENDIENTE_PAGO)
+  montoPagado Decimal       @default(0) @db.Decimal(10, 2) // total pagado hasta el momento
+  mpPrefId    String? // id de la preferencia MP (solo no abonados, mientras PENDIENTE_PAGO)
 
   clienteId Int
   cliente   Usuario @relation(fields: [clienteId], references: [id])
@@ -220,7 +220,7 @@ model Pago {
   monto      Decimal    @db.Decimal(10, 2)
   metodo     MetodoPago
   tipo       TipoPago
-  referencia String?    // número de transferencia, recibo, etc.
+  referencia String? // número de transferencia, recibo, etc.
 
   reservaId Int
   reserva   Reserva @relation(fields: [reservaId], references: [id])
@@ -241,11 +241,11 @@ model PagoLog {
   id            Int      @id @default(autoincrement())
   pagoId        Int
   pago          Pago     @relation(fields: [pagoId], references: [id])
-  evento        String   // "CREADO", "APROBADO", "REVERTIDO", "FALLIDO", "PENDIENTE"
-  mpPaymentId   String?  // id del pago en MP (si aplica)
-  mpStatus      String?  // status devuelto por MP
-  mpRawResponse Json?    // respuesta cruda de MP para debugging
-  solicitadoPor Int?     // id del usuario que disparó el evento
+  evento        String // "CREADO", "APROBADO", "REVERTIDO", "FALLIDO", "PENDIENTE"
+  mpPaymentId   String? // id del pago en MP (si aplica)
+  mpStatus      String? // status devuelto por MP
+  mpRawResponse Json? // respuesta cruda de MP para debugging
+  solicitadoPor Int? // id del usuario que disparó el evento
   createdAt     DateTime @default(now())
 
   @@map("pago_logs")
@@ -258,7 +258,7 @@ model PagoLog {
 model Asistencia {
   id            Int     @id @default(autoincrement())
   presente      Boolean @default(false)
-  registradoPor Int?    // id del usuario que registró (profesor o admin)
+  registradoPor Int? // id del usuario que registró (profesor o admin)
 
   reservaId Int     @unique // una reserva tiene como máximo un registro de asistencia
   reserva   Reserva @relation(fields: [reservaId], references: [id])
@@ -274,7 +274,7 @@ model Asistencia {
 
 model ColaEspera {
   id       Int       @id @default(autoincrement())
-  posicion Int       // orden en la cola (abonados tienen prioridad)
+  posicion Int // orden en la cola (abonados tienen prioridad)
   expiraEn DateTime? // hasta cuándo tiene para confirmar (5hs desde notificación)
 
   instanciaId Int
@@ -296,6 +296,21 @@ model ColaEspera {
 // Separado de Pago porque los abonos no están ligados a ninguna reserva.
 // ─────────────────────────────────────────
 
+// ─────────────────────────────────────────
+// CONFIGURACION
+// Parámetros globales del sistema (clave-valor).
+// Claves usadas: minutosClase, precioClase.
+// Solo ADMIN puede modificarlos.
+// ─────────────────────────────────────────
+
+model Configuracion {
+  clave     String   @id
+  valor     String
+  updatedAt DateTime @updatedAt
+
+  @@map("configuracion")
+}
+
 model PagoAbono {
   id             Int        @id @default(autoincrement())
   clienteId      Int
@@ -303,9 +318,9 @@ model PagoAbono {
   cantidadClases Int
   monto          Decimal    @db.Decimal(10, 2)
   metodo         MetodoPago
-  referencia     String?    // número de recibo, transferencia, etc.
-  mpPaymentId    String?    // id del pago en MP si fue vía webhook
-  mpRawResponse  Json?      // respuesta cruda de MP para debugging
+  referencia     String? // número de recibo, transferencia, etc.
+  mpPaymentId    String? // id del pago en MP si fue vía webhook
+  mpRawResponse  Json? // respuesta cruda de MP para debugging
   createdAt      DateTime   @default(now())
 
   @@map("pagos_abono")

@@ -4,6 +4,9 @@ import { useAuth } from '@/hooks/useAuth'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { LoginPage } from '@/pages/auth/LoginPage'
 import { RegisterPage } from '@/pages/auth/RegisterPage'
+import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage'
+import { ResetPasswordPage } from '@/pages/auth/ResetPasswordPage'
+import { DarPresentePage } from '@/pages/dar-presente/DarPresentePage'
 import { DashboardPage } from '@/pages/dashboard/DashboardPage'
 import { ProfesoresPage } from '@/pages/profesores/ProfesoresPage'
 import { ClasesPage } from '@/pages/clases/ClasesPage'
@@ -67,8 +70,10 @@ export function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login"    element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/login"            element={<LoginPage />} />
+        <Route path="/register"         element={<RegisterPage />} />
+        <Route path="/forgot-password"  element={<ForgotPasswordPage />} />
+        <Route path="/reset-password"   element={<ResetPasswordPage />} />
 
         <Route
           element={
@@ -105,6 +110,9 @@ export function AppRouter() {
           />
           <Route path="/asistencias"
             element={<PrivateRoute roles={['ADMIN', 'PROFESOR']}><AsistenciasPage /></PrivateRoute>}
+          />
+          <Route path="/dar-presente"
+            element={<PrivateRoute roles={['CLIENTE']}><DarPresentePage /></PrivateRoute>}
           />
         </Route>
 

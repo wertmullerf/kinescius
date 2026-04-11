@@ -43,13 +43,13 @@ export const clasesApi = {
 
   eliminarSuelta: (id: number) => del<void>(`/instancias/sueltas/${id}`),
 
-  editarInstancia: (id: number, data: Partial<{
-    profesorId: number
-    cupoMaximo: number
-    precio: number
-    esExcepcion: boolean
+  editarInstancia: (id: number, data: {
+    zona?: ZonaClase
+    profesorId?: number
+    cupoMaximo?: number
+    precio?: number
     motivoExcepcion: string
-  }>) => patch<ClaseInstancia>(`/instancias/${id}`, data),
+  }) => patch<ClaseInstancia>(`/instancias/${id}`, data),
 
   cancelarInstancia: (id: number) => patch<void>(`/instancias/${id}/cancelar`),
 }

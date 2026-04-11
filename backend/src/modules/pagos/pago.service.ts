@@ -7,28 +7,26 @@ import {
   type PaymentResponse,
 } from "../../utils/mercadopago";
 import { colaService } from "../cola-espera/cola.service";
-import { mailReservaConfirmada, mailAbonoConfirmado } from "../../utils/mailer";
+import { mailReservaConfirmada } from "../../utils/mailer";
 import type { MetodoPago } from "../../types/models";
 
 export const pagoService = {
 
   // ─── ABONO PRESENCIAL (ADMIN) ──────────────────────────────────────────────
+  // El admin registra manualmente un abono de un cliente (efectivo / transferencia).
+  // No genera reserva; solo incrementa clasesDisponibles.
 
   async cargarAbonoPresencial(
     clienteId:      number,
     cantidadClases: number,
-    precioPorClase: number,
+    monto:          number,
     metodo:         MetodoPago,
     solicitanteId:  number,
     referencia?:    string
   ) {
     const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
-    if (!cliente)                  throw new Error("Cliente no encontrado");
+    if (!cliente)              throw new Error("Cliente no encontrado");
     if (cliente.rol !== "CLIENTE") throw new Error("El usuario no es un cliente");
-
-    // Cálculo: cantidadClases × precioPorClase, con 20% de descuento si no está sancionado
-    const montoBase  = cantidadClases * precioPorClase;
-    const montoFinal = cliente.sancionado ? montoBase : Math.round(montoBase * 0.8);
 
     const nuevasClases = cliente.clasesDisponibles + cantidadClases;
 
@@ -39,38 +37,22 @@ export const pagoService = {
 
     await actualizarTipoCliente(clienteId, nuevasClases);
 
-    const pagoAbono = await prisma.pagoAbono.create({
-      data: {
-        clienteId,
-        cantidadClases,
-        monto:      montoFinal,
-        metodo,
-        referencia: referencia ?? null,
-      },
-    });
-
-    return { clienteId, cantidadClases, nuevasClases, precioPorClase, montoFinal, metodo, pagoAbonoId: pagoAbono.id };
+    return { clienteId, cantidadClases, nuevasClases, monto, metodo };
   },
 
   // ─── ABONO POR MP (CLIENTE) ───────────────────────────────────────────────
+  // Genera una preferencia de Checkout Pro y retorna el init_point.
+  // El acreditado de clases lo hace el webhook cuando MP confirma el pago.
 
-  async iniciarAbonoMp(clienteId: number, cantidadClases: number, precioPorClase: number) {
-    const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
-    if (!cliente) throw new Error("Cliente no encontrado");
-
-    // Cálculo: cantidadClases × precioPorClase, con 20% de descuento si no está sancionado
-    const montoBase  = cantidadClases * precioPorClase;
-    const montoFinal = cliente.sancionado ? montoBase : Math.round(montoBase * 0.8);
-
-    // Codificamos precioPorClase en el extRef para que el webhook pueda reconstruir el desglose
-    const extRef = `abono-${clienteId}-${cantidadClases}-${precioPorClase}-${Date.now()}`;
+  async iniciarAbonoMp(clienteId: number, cantidadClases: number, monto: number) {
+    const extRef = `abono-${clienteId}-${cantidadClases}-${Date.now()}`;
 
     const pref = await crearPreferencia({
       items: [
         {
           id:          extRef,
           title:       `Abono ${cantidadClases} clases - Kinescius`,
-          unit_price:  montoFinal,
+          unit_price:  monto,
           quantity:    1,
           currency_id: "ARS",
         },
@@ -81,12 +63,13 @@ export const pagoService = {
     return {
       initPoint:          pref.init_point,
       external_reference: extRef,
-      montoFinal,
       mpPrefId:           pref.id,
     };
   },
 
   // ─── COMPLEMENTO (ADMIN) ──────────────────────────────────────────────────
+  // El admin registra el saldo restante que el cliente paga presencialmente.
+  // Solo aplica a reservas en estado RESERVA_PAGA.
 
   async registrarComplemento(
     reservaId:     number,
@@ -118,7 +101,7 @@ export const pagoService = {
       }),
       prisma.reserva.update({
         where: { id: reservaId },
-        data:  { montoPagado: { increment: montoRestante }, estado: "CONFIRMADA" },
+        data:  { montoPagado: { increment: montoRestante }, estado: "COMPLETADA" },
       }),
     ]);
 
@@ -129,7 +112,57 @@ export const pagoService = {
     return pago;
   },
 
-  // ─── ABONOS DE UN CLIENTE ─────────────────────────────────────────────────
+  // ─── LISTAR ABONOS (ADMIN) ────────────────────────────────────────────────
+
+  async listarAbonos(q?: string) {
+    return prisma.pagoAbono.findMany({
+      where: q
+        ? {
+            cliente: {
+              OR: [
+                { nombre:   { contains: q, mode: "insensitive" } },
+                { apellido: { contains: q, mode: "insensitive" } },
+                { email:    { contains: q, mode: "insensitive" } },
+              ],
+            },
+          }
+        : undefined,
+      include: { cliente: { select: { id: true, nombre: true, apellido: true, email: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
+  // ─── LISTAR PAGOS DE RESERVAS (ADMIN) ────────────────────────────────────
+
+  async listarPagosReserva(q?: string) {
+    return prisma.pago.findMany({
+      where: q
+        ? {
+            reserva: {
+              cliente: {
+                OR: [
+                  { nombre:   { contains: q, mode: "insensitive" } },
+                  { apellido: { contains: q, mode: "insensitive" } },
+                  { email:    { contains: q, mode: "insensitive" } },
+                ],
+              },
+            },
+          }
+        : undefined,
+      include: {
+        reserva: {
+          include: {
+            cliente:   { select: { id: true, nombre: true, apellido: true, email: true } },
+            instancia: { select: { fecha: true, zona: true } },
+          },
+        },
+        logs: true,
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
+  // ─── LISTAR ABONOS POR CLIENTE ────────────────────────────────────────────
 
   async listarAbonosPorCliente(clienteId: number) {
     return prisma.pagoAbono.findMany({
@@ -148,47 +181,25 @@ export const pagoService = {
     });
   },
 
-  // ─── WEBHOOK — FORMATO NUEVO (POST con JSON body) ─────────────────────────
-  // Body: { type: "payment", action: "payment.created|updated", data: { id: "..." } }
+  // ─── WEBHOOK DE MERCADO PAGO ──────────────────────────────────────────────
+  // Endpoint público (sin auth). MP reintenta si no recibe HTTP 200.
+  //
+  // POST: { type: "payment", action: "payment.created|updated", data: { id: "..." } }
+  // GET/IPN: query params ?topic=payment&id=PAYMENT_ID
 
   async procesarWebhookPost(body: Record<string, string | object>) {
-    const type   = body["type"]   as string | undefined;
-    const action = body["action"] as string | undefined;
-    const data   = body["data"]   as Record<string, string> | undefined;
-    const topic  = body["topic"]  as string | undefined;
-
-    let paymentId: string | null = null;
-
-    if (type === "payment" && data) {
-      if (action !== "payment.created" && action !== "payment.updated") {
-        return { procesado: false, motivo: "accion_ignorada" };
-      }
-      paymentId = data["id"] ?? null;
-    } else if (topic === "payment") {
-      // Algunos accounts de MP envían en el body: { topic: "payment", id: "..." }
-      paymentId = String(body["id"] ?? "");
-    }
-
-    if (!paymentId) return { procesado: false, motivo: "sin_payment_id" };
-
+    if (body["type"] !== "payment" || !body["data"]) return { procesado: false };
+    const accion = body["action"] as string;
+    if (accion !== "payment.created" && accion !== "payment.updated") return { procesado: false };
+    const paymentId = (body["data"] as Record<string, string>)["id"] ?? null;
+    if (!paymentId) return { procesado: false };
     return this._procesarPago(paymentId);
   },
-
-  // ─── WEBHOOK — FORMATO IPN (GET con query params) ─────────────────────────
-  // Query: ?topic=payment&id=PAYMENT_ID
-  // MP usa este formato para notificaciones IPN heredadas y para Checkout Pro
-  // en algunos contextos de cuenta.
 
   async procesarWebhookIpn(topic: string, paymentId: string) {
-    if (topic !== "payment" || !paymentId) {
-      return { procesado: false, motivo: "topic_o_id_invalido" };
-    }
+    if (topic !== "payment" || !paymentId) return { procesado: false };
     return this._procesarPago(paymentId);
   },
-
-  // ─── LÓGICA CENTRAL DE PROCESAMIENTO ─────────────────────────────────────
-  // Consulta el pago en MP y deriva según status + external_reference.
-  // Compartida por el handler POST y el GET para evitar duplicación.
 
   async _procesarPago(paymentId: string) {
     let mpData: PaymentResponse;
@@ -196,14 +207,12 @@ export const pagoService = {
       mpData = await obtenerPago(paymentId);
     } catch (err) {
       console.error("[webhook] Error consultando pago en MP:", err);
-      return { procesado: false, motivo: "error_consultando_mp" };
+      return { procesado: false };
     }
 
-    const status  = mpData.status             ?? "";
+    const status  = mpData.status  ?? "";
     const extRef  = mpData.external_reference ?? "";
-    const mpPayId = String(mpData.id          ?? "");
-
-    console.log(`[webhook] payment ${mpPayId} | status: ${status} | ref: ${extRef}`);
+    const mpPayId = String(mpData.id ?? "");
 
     if (status === "approved") {
       if (extRef.startsWith("sena-")) {
@@ -219,6 +228,7 @@ export const pagoService = {
   },
 
   // ─── APROBAR SEÑA ─────────────────────────────────────────────────────────
+  // Idempotente: si la reserva ya no está en PENDIENTE_PAGO, no hace nada.
 
   async _aprobarSena(
     extRef:   string,
@@ -245,8 +255,8 @@ export const pagoService = {
         data: {
           reservaId,
           monto,
-          metodo:     "MERCADO_PAGO",
-          tipo:       "SENA",
+          metodo:    "MERCADO_PAGO",
+          tipo:      "SENA",
           referencia: mpPayId,
         },
       }),
@@ -269,6 +279,7 @@ export const pagoService = {
   },
 
   // ─── APROBAR ABONO ────────────────────────────────────────────────────────
+  // Acredita las clases al cliente. extRef: "abono-{clienteId}-{clases}-{ts}"
 
   async _aprobarAbono(
     extRef:   string,
@@ -276,18 +287,9 @@ export const pagoService = {
     mpStatus: string,
     mpData:   PaymentResponse
   ) {
-    // Idempotencia: si el webhook llega dos veces, no procesar dos veces
-    const yaProcessado = await prisma.pagoAbono.findFirst({ where: { mpPaymentId: mpPayId } });
-    if (yaProcessado) {
-      console.log(`[webhook] Abono ${mpPayId} ya procesado, ignorando`);
-      return;
-    }
-
-    // extRef: "abono-{clienteId}-{cantidadClases}-{precioPorClase}-{timestamp}"
     const partes         = extRef.split("-");
     const clienteId      = Number(partes[1]);
     const cantidadClases = Number(partes[2]);
-    const precioPorClase = Number(partes[3]);
 
     const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
     if (!cliente) return;
@@ -300,27 +302,10 @@ export const pagoService = {
     });
 
     await actualizarTipoCliente(clienteId, nuevasClases);
-
-    const monto = mpData.transaction_amount ?? 0;
-
-    await prisma.pagoAbono.create({
-      data: {
-        clienteId,
-        cantidadClases,
-        monto,
-        metodo:       "MERCADO_PAGO",
-        mpPaymentId:  mpPayId,
-        mpRawResponse: paymentToLog(mpData),
-      },
-    });
-
-    await mailAbonoConfirmado(
-      { nombre: cliente.nombre, email: cliente.email },
-      { cantidadClases, precioPorClase, montoTotal: monto }
-    );
   },
 
   // ─── RECHAZAR PAGO ────────────────────────────────────────────────────────
+  // Solo aplica a pagos de seña. Cancela la reserva y libera el cupo.
 
   async _rechazarPago(
     extRef:   string,
@@ -350,8 +335,8 @@ export const pagoService = {
       data: {
         reservaId,
         monto,
-        metodo:     "MERCADO_PAGO",
-        tipo:       "SENA",
+        metodo:    "MERCADO_PAGO",
+        tipo:      "SENA",
         referencia: mpPayId,
       },
     });

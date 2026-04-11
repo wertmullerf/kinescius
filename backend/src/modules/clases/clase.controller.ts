@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import { claseService } from "./clase.service";
 import { ok, created } from "../../utils/response";
+import type { ZonaClase } from "../../types/models";
 
 export const claseController = {
   // ── Patrones recurrentes ────────────────────────────────────────
@@ -52,7 +53,11 @@ export const claseController = {
 
   async listarInstancias(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await claseService.listarInstancias(Number(req.params.agendaId));
+      const { fecha, zona } = req.query as { fecha?: string; zona?: ZonaClase };
+      const data = await claseService.listarInstancias(
+        Number(req.params.agendaId),
+        { fecha, zona }
+      );
       ok(res, data);
     } catch (err) {
       next(err);

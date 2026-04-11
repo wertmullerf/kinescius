@@ -41,6 +41,12 @@ export interface CreatePreferenceOptions {
   external_reference: string;
   /** Minutos hasta que vence la preferencia. */
   expiresEnMinutos?:  number;
+  /**
+   * Path del frontend al que MP debe redirigir después del pago.
+   * Ej: '/reservas' | '/abonos'
+   * Se construyen tres back_urls: ?payment=success|failure|pending
+   */
+  returnPath?:        string;
 }
 
 export interface PreferenceResult {
@@ -74,13 +80,17 @@ export async function crearPreferencia(
     external_reference: opts.external_reference,
   };
 
-  if (env.mp.successUrl && env.mp.failureUrl && env.mp.pendingUrl) {
+  if (opts.returnPath) {
+    const base = `${env.mp.frontendUrl}${opts.returnPath}`;
     body.back_urls = {
-      success: env.mp.successUrl,
-      failure: env.mp.failureUrl,
-      pending: env.mp.pendingUrl,
+      success: `${base}?payment=success`,
+      failure: `${base}?payment=failure`,
+      pending: `${base}?payment=pending`,
     };
-    body.auto_return = "approved";
+    // auto_return requiere HTTPS — solo lo seteamos en producción
+    if (env.mp.frontendUrl.startsWith("https://")) {
+      body.auto_return = "approved";
+    }
   }
 
   if (env.mp.webhookUrl) {

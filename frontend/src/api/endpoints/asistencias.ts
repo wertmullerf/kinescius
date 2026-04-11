@@ -1,8 +1,19 @@
-import { get, patch } from '@/api/client'
+import { get, patch, post } from '@/api/client'
 import type { Asistencia, ClaseInstancia, Reserva, ZonaClase } from '@/types'
 
 interface ClaseConAsistencias extends ClaseInstancia {
   reservas: (Reserva & { asistencia?: Asistencia })[]
+}
+
+export interface AlumnoReserva {
+  id: number          // reservaId
+  estado: string
+  cliente: { id: number; nombre: string; apellido: string; tipoCliente: string }
+  asistencia?: { id: number; presente: boolean } | null
+}
+
+export interface ClaseProfesor extends ClaseInstancia {
+  reservas: AlumnoReserva[]
 }
 
 export interface AsistenciaAdmin {
@@ -49,6 +60,14 @@ export const asistenciasApi = {
   // Admin: historial de asistencias de un cliente
   historialCliente: (clienteId: number) =>
     get<HistorialClienteResponse>(`/asistencias/cliente/${clienteId}`),
+
+  // Profesor: sus clases (últimos 2 días + próximos 60) con lista de alumnos
+  misClases: () =>
+    get<ClaseProfesor[]>('/asistencias/mis-clases'),
+
+  // Cliente escanea QR y se marca presente
+  darPresente: (codigoQr: string) =>
+    post<Asistencia>('/asistencias/dar-presente', { codigoQr }),
 
   // Admin: listado global con filtro opcional
   listarTodas: (q?: string) => {

@@ -162,7 +162,8 @@ export const reservaService = {
           },
         ],
         external_reference: `sena-${reserva.id}`,
-        expiresEnMinutos:   360, // 6hs, alineado con el cron que cancela a las 5hs
+        expiresEnMinutos:   360,
+        returnPath:         "/reservas",
       });
       initPoint = pref.init_point ?? "";
       mpPrefId  = pref.id ?? "";
@@ -269,12 +270,51 @@ export const reservaService = {
     return reservaActualizada;
   },
 
+  // ─── INIT POINT (pago pendiente) ─────────────────────────────────
+  // Genera una preferencia MP fresca para una reserva PENDIENTE_PAGO.
+  // Útil cuando el link anterior expiró o el usuario quiere volver a pagar.
+
+  async obtenerInitPoint(reservaId: number, clienteId: number) {
+    const reserva = await prisma.reserva.findUnique({
+      where:   { id: reservaId },
+      include: { instancia: true },
+    });
+    if (!reserva)                              throw new Error("Reserva no encontrada");
+    if (reserva.clienteId !== clienteId)       throw new Error("No tenés permiso");
+    if (reserva.estado !== "PENDIENTE_PAGO")   throw new Error("Solo se puede obtener link de pago para reservas pendientes");
+
+    const { instancia } = reserva;
+    const monto = Math.round(Number(instancia.precio) * 0.5);
+
+    const pref = await crearPreferencia({
+      items: [{
+        id:          `sena-${reserva.id}`,
+        title:       `Seña - Clase ${instancia.zona} ${instancia.fecha.toLocaleDateString("es-AR")}`,
+        unit_price:  monto,
+        quantity:    1,
+        currency_id: "ARS",
+      }],
+      external_reference: `sena-${reserva.id}`,
+      expiresEnMinutos:   360,
+      returnPath:         "/reservas",
+    });
+
+    await prisma.reserva.update({
+      where: { id: reservaId },
+      data:  { mpPrefId: pref.id },
+    });
+
+    return { initPoint: pref.init_point };
+  },
+
   // ─── LISTAR RESERVAS ──────────────────────────────────────────────
 
-  async listar(clienteId?: number) {
-    const where = clienteId ? { clienteId } : {};
+  async listar(clienteId?: number, instanciaId?: number) {
     return prisma.reserva.findMany({
-      where,
+      where: {
+        ...(clienteId   !== undefined && { clienteId }),
+        ...(instanciaId !== undefined && { instanciaId }),
+      },
       include: {
         instancia: {
           include: { profesor: { select: { id: true, nombre: true, apellido: true } } },

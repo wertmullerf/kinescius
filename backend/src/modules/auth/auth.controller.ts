@@ -21,6 +21,26 @@ export const authController = {
     }
   },
 
+  async forgotPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      await authService.forgotPassword(req.body.email);
+      // Respuesta siempre exitosa — no revelamos si el email existe
+      ok(res, null, "Si el email está registrado, recibirás un enlace para restablecer la contraseña");
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  async resetPassword(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { token, password } = req.body;
+      await authService.resetPassword(token, password);
+      ok(res, null, "Contraseña restablecida correctamente");
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // El logout con JWT es stateless: el servidor no guarda tokens,
   // así que "invalidar" significa simplemente que el cliente descarta el token.
   // Si en el futuro se necesita invalidación real (ej: "cerrar todas las sesiones"),

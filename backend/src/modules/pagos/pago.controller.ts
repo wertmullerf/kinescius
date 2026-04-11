@@ -28,10 +28,13 @@ export const pagoController = {
   async iniciarAbonoMp(req: Request, res: Response, next: NextFunction) {
     try {
       const { cantidadClases, precioPorClase } = req.body;
+      const cliente = await prisma.usuario.findUnique({ where: { id: req.user!.id } });
+      const descuento = cliente?.sancionado ? 0 : 0.20;
+      const monto = Math.round(Number(cantidadClases) * Number(precioPorClase) * (1 - descuento));
       const resultado = await pagoService.iniciarAbonoMp(
         req.user!.id,
         Number(cantidadClases),
-        Number(precioPorClase)
+        monto
       );
       created(res, resultado, "Preferencia de pago generada");
     } catch (err) {
@@ -51,6 +54,28 @@ export const pagoController = {
         referencia
       );
       created(res, pago, "Complemento registrado correctamente");
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/pagos/abonos  — todos los abonos (ADMIN, filtro opcional ?q=)
+  async listarAbonos(req: Request, res: Response, next: NextFunction) {
+    try {
+      const q    = typeof req.query.q === "string" ? req.query.q : undefined;
+      const data = await pagoService.listarAbonos(q);
+      ok(res, data);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // GET /api/pagos/historial  — todos los pagos de reservas (ADMIN, filtro opcional ?q=)
+  async listarPagosReserva(req: Request, res: Response, next: NextFunction) {
+    try {
+      const q    = typeof req.query.q === "string" ? req.query.q : undefined;
+      const data = await pagoService.listarPagosReserva(q);
+      ok(res, data);
     } catch (err) {
       next(err);
     }

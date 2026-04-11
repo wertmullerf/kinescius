@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../../db/prisma";
 import { env } from "../../config/env";
+import { mailRestablecerContrasenia } from "../../utils/mailer";
 
 // ─── Tipos internos ───────────────────────────────────────────────
 
@@ -90,18 +91,57 @@ export const authService = {
     return { usuario: usuarioSinPassword, token };
   },
 
+  async forgotPassword(email: string) {
+    // No revelamos si el email existe o no (seguridad)
+    const usuario = await prisma.usuario.findUnique({ where: { email } });
+    if (!usuario) return; // silencioso
+
+    // Token de un solo uso: incluye fragmento del hash actual.
+    // Si el usuario ya cambió la contraseña, el hash ya no coincide → token inválido.
+    const token = jwt.sign(
+      { id: usuario.id, email: usuario.email, ph: usuario.password.slice(-8) },
+      env.jwt.secret,
+      { expiresIn: "1h" }
+    );
+
+    const resetLink = `${env.mp.frontendUrl}/reset-password?token=${token}`;
+    await mailRestablecerContrasenia({ nombre: usuario.nombre, email: usuario.email }, resetLink);
+  },
+
+  async resetPassword(token: string, newPassword: string) {
+    let payload: { id: number; email: string; ph: string };
+    try {
+      payload = jwt.verify(token, env.jwt.secret) as typeof payload;
+    } catch {
+      throw new Error("El enlace es inválido o expiró");
+    }
+
+    const usuario = await prisma.usuario.findUnique({ where: { id: payload.id } });
+    if (!usuario) throw new Error("Usuario no encontrado");
+
+    // Verificar que el token no fue ya usado (hash no cambió)
+    if (usuario.password.slice(-8) !== payload.ph) {
+      throw new Error("El enlace ya fue utilizado");
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    await prisma.usuario.update({ where: { id: usuario.id }, data: { password: hash } });
+  },
+
   async me(id: number) {
     const usuario = await prisma.usuario.findUnique({
       where: { id },
       select: {
-        id: true,
-        nombre: true,
-        apellido: true,
-        dni: true,
-        email: true,
-        rol: true,
-        tipoCliente: true,
-        createdAt: true,
+        id:                true,
+        nombre:            true,
+        apellido:          true,
+        dni:               true,
+        email:             true,
+        rol:               true,
+        tipoCliente:       true,
+        clasesDisponibles: true,
+        sancionado:        true,
+        createdAt:         true,
         // password excluido explícitamente
       },
     });

@@ -31,6 +31,14 @@ router.get(
   reservaController.obtener
 );
 
+// GET /reservas/:id/init-point — obtener link de pago MP para una reserva PENDIENTE_PAGO (CLIENTE)
+router.get(
+  "/:id/init-point",
+  authenticateToken,
+  authorizeRoles("CLIENTE"),
+  reservaController.obtenerInitPoint
+);
+
 // PATCH /reservas/:id/cambiar — cambiar a otra instancia del mismo día y zona (CLIENTE)
 router.patch(
   "/:id/cambiar",

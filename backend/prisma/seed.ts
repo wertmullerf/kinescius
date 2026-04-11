@@ -387,6 +387,21 @@ async function main() {
 
   console.log("✓ PagoLogs creados");
 
+  // ─── Configuración inicial ────────────────────────────────────────
+  await Promise.all([
+    prisma.configuracion.upsert({
+      where:  { clave: "minutosClase" },
+      update: { valor: "60" },
+      create: { clave: "minutosClase", valor: "60" },
+    }),
+    prisma.configuracion.upsert({
+      where:  { clave: "precioClase" },
+      update: { valor: "2000" },
+      create: { clave: "precioClase", valor: "2000" },
+    }),
+  ]);
+  console.log("✓ Configuración inicial creada (minutosClase: 60, precioClase: 2000)");
+
   // ─── Resumen ─────────────────────────────────────────────────────
   console.log(`
 ✅ Seed completado exitosamente

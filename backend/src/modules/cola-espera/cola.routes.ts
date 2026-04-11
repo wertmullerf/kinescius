@@ -20,6 +20,15 @@ router.delete(
   colaController.salir
 );
 
+// GET /cola-espera/mias — mis entradas en cola (CLIENTE)
+// Debe ir ANTES de /:instanciaId para que "mias" no sea interpretado como param
+router.get(
+  "/mias",
+  authenticateToken,
+  authorizeRoles("CLIENTE"),
+  colaController.misEntradas
+);
+
 // GET /cola-espera/:instanciaId — ver cola (ADMIN)
 router.get(
   "/:instanciaId",

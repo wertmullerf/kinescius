@@ -259,15 +259,44 @@ export const claseService = {
 
   // ── Instancias del mes ──────────────────────────────────────────────────────
 
-  async listarInstancias(agendaId: number) {
+  async listarInstancias(
+    agendaId: number,
+    filters?: { fecha?: string; zona?: ZonaClase }
+  ) {
     const agenda = await prisma.agendaMensual.findUnique({ where: { id: agendaId } });
     if (!agenda) throw new Error("Agenda no encontrada");
 
-    return prisma.claseInstancia.findMany({
-      where: { recurrente: { agendaId } },
-      include: includeInstancia,
+    // Filtro por fecha: rango del día completo en UTC
+    let fechaFiltro: { gte: Date; lt: Date } | undefined;
+    if (filters?.fecha) {
+      const inicio = new Date(`${filters.fecha}T00:00:00.000Z`);
+      const fin    = new Date(`${filters.fecha}T23:59:59.999Z`);
+      fechaFiltro  = { gte: inicio, lt: fin };
+    }
+
+    const instancias = await prisma.claseInstancia.findMany({
+      where: {
+        recurrente: { agendaId },
+        ...(fechaFiltro   && { fecha: fechaFiltro }),
+        ...(filters?.zona && { zona: filters.zona }),
+      },
+      include: {
+        profesor: { select: { id: true, nombre: true, apellido: true } },
+        _count: {
+          select: {
+            reservas: {
+              where: { estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] } },
+            },
+          },
+        },
+      },
       orderBy: { fecha: "asc" },
     });
+
+    return instancias.map(({ _count, ...rest }) => ({
+      ...rest,
+      reservasActivas: _count.reservas,
+    }));
   },
 
   async editarInstancia(

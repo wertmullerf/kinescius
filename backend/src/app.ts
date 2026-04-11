@@ -18,7 +18,7 @@ registerRoutes(app);
 
 app.use(errorHandler);
 
-app.listen(env.port, () => {
+app.listen(env.port, '0.0.0.0', () => {
   console.log(`✓ Servidor corriendo en http://localhost:${env.port}`);
   console.log(`  Entorno: ${env.nodeEnv}`);
 });

@@ -1,189 +1,188 @@
 {
   "info": {
-    "name": "Kinesius API",
+    "name": "Kinescius API",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl",      "value": "http://localhost:3000/api" },
-    { "key": "tokenAdmin",   "value": "" },
-    { "key": "tokenProfesor","value": "" },
-    { "key": "tokenCliente", "value": "" },
-    { "key": "agendaId",     "value": "" },
-    { "key": "patronId",     "value": "" },
-    { "key": "instanciaId",  "value": "" },
-    { "key": "sueltaId",     "value": "" },
-    { "key": "profesorId",   "value": "" }
+    { "key": "base",        "value": "http://localhost:3000/api" },
+    { "key": "admin",       "value": "" },
+    { "key": "profesor",    "value": "" },
+    { "key": "cliente",     "value": "" },
+    { "key": "agendaId",    "value": "" },
+    { "key": "patronId",    "value": "" },
+    { "key": "instanciaId", "value": "" },
+    { "key": "codigoQr",    "value": "" },
+    { "key": "sueltaId",    "value": "" },
+    { "key": "profesorId",  "value": "" },
+    { "key": "reservaId",   "value": "" },
+    { "key": "clienteId",   "value": "" }
   ],
   "item": [
+
     {
-      "name": "Auth",
+      "name": "🔑 Auth",
       "item": [
         {
-          "name": "Register (cliente nuevo)",
+          "name": "Login ADMIN → guarda token",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.token) pm.collectionVariables.set('admin', j.data.token);"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/auth/register",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nombre\": \"Test\",\n  \"apellido\": \"Usuario\",\n  \"dni\": \"40123456\",\n  \"email\": \"test@mail.com\",\n  \"password\": \"test1234\"\n}"
-            }
+            "url": "{{base}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"laura@kinesius.com\",\n  \"password\": \"admin1234\"\n}" }
           }
         },
         {
-          "name": "Login ADMIN",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.token) {",
-                  "  pm.collectionVariables.set('tokenAdmin', json.data.token);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Login PROFESOR → guarda token",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.token) pm.collectionVariables.set('profesor', j.data.token);"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/auth/login",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"laura@kinesius.com\",\n  \"password\": \"admin1234\"\n}"
-            }
+            "url": "{{base}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"profesor@kinesius.com\",\n  \"password\": \"profesor1234\"\n}" }
           }
         },
         {
-          "name": "Login PROFESOR",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.token) {",
-                  "  pm.collectionVariables.set('tokenProfesor', json.data.token);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Login CLIENTE → guarda token",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.token) pm.collectionVariables.set('cliente', j.data.token);",
+            "if (j.data?.usuario?.id) pm.collectionVariables.set('clienteId', j.data.usuario.id);"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/auth/login",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"profesor@kinesius.com\",\n  \"password\": \"profesor1234\"\n}"
-            }
+            "url": "{{base}}/auth/login",
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"carlos@mail.com\",\n  \"password\": \"cliente1234\"\n}" }
           }
         },
         {
-          "name": "Login CLIENTE",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.token) {",
-                  "  pm.collectionVariables.set('tokenCliente', json.data.token);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Register cliente nuevo",
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
-            "url": "{{baseUrl}}/auth/login",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"carlos@mail.com\",\n  \"password\": \"cliente1234\"\n}"
-            }
+            "url": "{{base}}/auth/register",
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Ana\",\n  \"apellido\": \"Torres\",\n  \"dni\": \"41999001\",\n  \"email\": \"ana@mail.com\",\n  \"password\": \"test1234\"\n}" }
           }
         },
         {
-          "name": "Me (token actual)",
+          "name": "Me (quien soy)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/auth/me"
-          }
-        },
-        {
-          "name": "Logout",
-          "request": {
-            "method": "POST",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/auth/logout"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/auth/me"
           }
         }
       ]
     },
+
     {
-      "name": "Profesores",
+      "name": "👤 Usuarios (ADMIN)",
+      "item": [
+        {
+          "name": "Listar clientes",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.length > 0) pm.collectionVariables.set('clienteId', j.data[0].id);"
+          ]}}],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/usuarios"
+          }
+        },
+        {
+          "name": "Listar clientes — filtrar abonados",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": {
+              "raw": "{{base}}/usuarios?tipoCliente=ABONADO",
+              "query": [{ "key": "tipoCliente", "value": "ABONADO" }]
+            }
+          }
+        },
+        {
+          "name": "Listar clientes — buscar por nombre",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": {
+              "raw": "{{base}}/usuarios?busqueda=carlos",
+              "query": [{ "key": "busqueda", "value": "carlos" }]
+            }
+          }
+        },
+        {
+          "name": "Ver cliente (con historial de reservas)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/usuarios/{{clienteId}}"
+          }
+        },
+        {
+          "name": "Editar cliente",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base}}/usuarios/{{clienteId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Carlos\",\n  \"apellido\": \"García\",\n  \"sancionado\": false\n}" }
+          }
+        },
+        {
+          "name": "Eliminar cliente",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/usuarios/{{clienteId}}"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🧑‍🏫 Profesores",
       "item": [
         {
           "name": "Listar profesores",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/profesores"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/profesores"
           }
         },
         {
-          "name": "Listar profesores (como PROFESOR)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenProfesor}}" }],
-            "url": "{{baseUrl}}/profesores"
-          }
-        },
-        {
-          "name": "Listar profesores (como CLIENTE — debe dar 403)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenCliente}}" }],
-            "url": "{{baseUrl}}/profesores"
-          }
-        },
-        {
-          "name": "Crear profesor",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.id) {",
-                  "  pm.collectionVariables.set('profesorId', json.data.id);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Crear profesor → guarda ID",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.id) pm.collectionVariables.set('profesorId', j.data.id);"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": "{{baseUrl}}/profesores",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nombre\": \"Roberto\",\n  \"apellido\": \"Sánchez\",\n  \"dni\": \"28999000\"\n}"
-            }
+            "url": "{{base}}/profesores",
+            "body": { "mode": "raw", "raw": "{\n  \"nombre\": \"Roberto\",\n  \"apellido\": \"Sánchez\",\n  \"dni\": \"28999000\"\n}" }
           }
         },
         {
           "name": "Ver profesor",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/profesores/{{profesorId}}"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/profesores/{{profesorId}}"
           }
         },
         {
@@ -191,533 +190,431 @@
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": "{{baseUrl}}/profesores/{{profesorId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nombre\": \"Roberto\",\n  \"apellido\": \"Fernández\"\n}"
-            }
+            "url": "{{base}}/profesores/{{profesorId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"apellido\": \"Fernández\"\n}" }
           }
         },
         {
           "name": "Eliminar profesor",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/profesores/{{profesorId}}"
-          }
-        },
-        {
-          "name": "Crear profesor — DNI duplicado (debe dar error)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/profesores",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nombre\": \"Otro\",\n  \"apellido\": \"Profesor\",\n  \"dni\": \"27100001\"\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear profesor — validación falla (DNI inválido)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/profesores",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nombre\": \"Test\",\n  \"apellido\": \"Test\",\n  \"dni\": \"ABC\"\n}"
-            }
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/profesores/{{profesorId}}"
           }
         }
       ]
     },
+
     {
-      "name": "Agenda",
+      "name": "📅 Agenda",
       "item": [
         {
           "name": "Listar agendas",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/agenda"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/agenda"
           }
         },
         {
-          "name": "Crear agenda (mes actual)",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "const now = new Date();",
-                  "pm.variables.set('mesActual',  now.getMonth() + 1);",
-                  "pm.variables.set('anioActual', now.getFullYear());"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.id) {",
-                  "  pm.collectionVariables.set('agendaId', json.data.id);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Crear agenda → guarda ID",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.id) pm.collectionVariables.set('agendaId', j.data.id);"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": "{{baseUrl}}/agenda",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"mes\": {{mesActual}},\n  \"anio\": {{anioActual}}\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear agenda — mes+año fijo (mayo 2026)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.id) {",
-                  "  pm.collectionVariables.set('agendaId', json.data.id);",
-                  "}"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"mes\": 5,\n  \"anio\": 2026\n}"
-            }
+            "url": "{{base}}/agenda",
+            "body": { "mode": "raw", "raw": "{\n  \"mes\": 5,\n  \"anio\": 2026\n}" }
           }
         },
         {
           "name": "Ver agenda con patrones",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/agenda/{{agendaId}}"
           }
         },
         {
           "name": "Eliminar agenda",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}"
-          }
-        },
-        {
-          "name": "Crear agenda — mes+año duplicado (debe dar error)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"mes\": 5,\n  \"anio\": 2026\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear agenda — mes inválido (debe dar error)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"mes\": 13,\n  \"anio\": 2026\n}"
-            }
-          }
-        },
-        {
-          "name": "Ver agenda — no existe (debe dar 404)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/agenda/99999"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/agenda/{{agendaId}}"
           }
         }
       ]
     },
+
     {
-      "name": "Clases — Patrones Recurrentes",
+      "name": "🔁 Patrones Recurrentes",
       "item": [
         {
           "name": "Listar patrones de la agenda",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/agenda/{{agendaId}}/recurrentes"
           }
         },
         {
-          "name": "Listar patrones (como PROFESOR)",
-          "request": {
-            "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenProfesor}}" }],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes"
-          }
-        },
-        {
-          "name": "Crear patrón — Lunes 18:00 ALTA Juan Pérez",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.id) {",
-                  "  pm.collectionVariables.set('patronId', json.data.id);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Crear patrón → guarda ID",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.id) pm.collectionVariables.set('patronId', j.data.id);"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"diaSemana\": 1,\n  \"hora\": \"18:00\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 1\n}"
-            }
+            "url": "{{base}}/agenda/{{agendaId}}/recurrentes",
+            "body": { "mode": "raw", "raw": "{\n  \"diaSemana\": 1,\n  \"hora\": \"18:00\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 1\n}" }
           }
         },
         {
-          "name": "Crear patrón — Miércoles 09:00 MEDIA María González",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"diaSemana\": 3,\n  \"hora\": \"09:00\",\n  \"zona\": \"MEDIA\",\n  \"cupoMaximo\": 8,\n  \"precio\": 1500,\n  \"profesorId\": 2\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear patrón — validación falla (hora inválida)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"diaSemana\": 1,\n  \"hora\": \"8:00\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 1\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear patrón — profesor inexistente (debe dar error)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"diaSemana\": 2,\n  \"hora\": \"10:00\",\n  \"zona\": \"BAJA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 1000,\n  \"profesorId\": 99999\n}"
-            }
-          }
-        },
-        {
-          "name": "Editar patrón — cambiar precio y cupo (propaga a instancias)",
+          "name": "Editar patrón",
           "request": {
             "method": "PUT",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"precio\": 2500,\n  \"cupoMaximo\": 12\n}"
-            }
-          }
-        },
-        {
-          "name": "Editar patrón — cambiar diaSemana (regenera instancias)",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"diaSemana\": 2\n}"
-            }
+            "url": "{{base}}/agenda/{{agendaId}}/recurrentes/{{patronId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"precio\": 2500,\n  \"cupoMaximo\": 12\n}" }
           }
         },
         {
           "name": "Eliminar patrón",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}"
-          }
-        },
-        {
-          "name": "Editar patrón — como CLIENTE (debe dar 403)",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenCliente}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/recurrentes/{{patronId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"precio\": 999\n}"
-            }
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/agenda/{{agendaId}}/recurrentes/{{patronId}}"
           }
         }
       ]
     },
+
     {
-      "name": "Clases — Instancias",
+      "name": "📋 Instancias",
       "item": [
         {
-          "name": "Listar instancias del mes",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.length > 0) {",
-                  "  pm.collectionVariables.set('instanciaId', json.data[0].id);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Listar instancias del mes → guarda ID y QR",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.length > 0) {",
+            "  pm.collectionVariables.set('instanciaId', j.data[0].id);",
+            "  pm.collectionVariables.set('codigoQr', j.data[0].codigoQr);",
+            "}"
+          ]}}],
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/instancias"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/agenda/{{agendaId}}/instancias"
           }
         },
         {
           "name": "Listar instancias (como CLIENTE)",
           "request": {
             "method": "GET",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenCliente}}" }],
-            "url": "{{baseUrl}}/agenda/{{agendaId}}/instancias"
+            "header": [{ "key": "Authorization", "value": "Bearer {{cliente}}" }],
+            "url": "{{base}}/agenda/{{agendaId}}/instancias"
           }
         },
         {
-          "name": "Editar instancia — excepción (cambio de profesor)",
+          "name": "Editar instancia — excepción",
           "request": {
             "method": "PATCH",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": "{{baseUrl}}/instancias/{{instanciaId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"profesorId\": 2,\n  \"motivoExcepcion\": \"Juan Pérez está de licencia ese día\"\n}"
-            }
-          }
-        },
-        {
-          "name": "Editar instancia — sin motivoExcepcion (debe dar error)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/instancias/{{instanciaId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cupoMaximo\": 5\n}"
-            }
+            "url": "{{base}}/instancias/{{instanciaId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"profesorId\": 2,\n  \"motivoExcepcion\": \"Reemplazo de emergencia\"\n}" }
           }
         },
         {
           "name": "Cancelar instancia",
           "request": {
             "method": "PATCH",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/instancias/{{instanciaId}}/cancelar"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/instancias/{{instanciaId}}/cancelar"
           }
         },
         {
-          "name": "Editar instancia — como CLIENTE (debe dar 403)",
-          "request": {
-            "method": "PATCH",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenCliente}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/instancias/{{instanciaId}}",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"cupoMaximo\": 5,\n  \"motivoExcepcion\": \"test\"\n}"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "Clases — Sueltas",
-      "item": [
-        {
-          "name": "Crear clase suelta",
-          "event": [
-            {
-              "listen": "prerequest",
-              "script": {
-                "exec": [
-                  "// Próximo martes a las 15:00",
-                  "const now = new Date();",
-                  "const diasHastaMartes = (2 - now.getDay() + 7) % 7 || 7;",
-                  "const martes = new Date(now);",
-                  "martes.setDate(now.getDate() + diasHastaMartes);",
-                  "martes.setHours(15, 0, 0, 0);",
-                  "pm.variables.set('fechaSuelta', martes.toISOString());"
-                ]
-              }
-            },
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.id) {",
-                  "  pm.collectionVariables.set('sueltaId', json.data.id);",
-                  "}"
-                ]
-              }
-            }
-          ],
+          "name": "Crear clase suelta → guarda ID",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.id) {",
+            "  pm.collectionVariables.set('sueltaId', j.data.id);",
+            "  pm.collectionVariables.set('instanciaId', j.data.id);",
+            "  pm.collectionVariables.set('codigoQr', j.data.codigoQr);",
+            "}"
+          ]}}],
           "request": {
             "method": "POST",
             "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
             ],
-            "url": "{{baseUrl}}/instancias/sueltas",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fecha\": \"{{fechaSuelta}}\",\n  \"zona\": \"BAJA\",\n  \"cupoMaximo\": 6,\n  \"precio\": 1200,\n  \"profesorId\": 3\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear clase suelta — fecha fija manual",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/instancias/sueltas",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fecha\": \"2026-06-15T10:00:00.000Z\",\n  \"zona\": \"MEDIA\",\n  \"cupoMaximo\": 8,\n  \"precio\": 1800,\n  \"profesorId\": 1\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear clase suelta — profesor inexistente (debe dar error)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/instancias/sueltas",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fecha\": \"2026-07-10T11:00:00.000Z\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 99999\n}"
-            }
-          }
-        },
-        {
-          "name": "Crear clase suelta — fecha inválida (debe dar error)",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{tokenAdmin}}" },
-              { "key": "Content-Type",  "value": "application/json" }
-            ],
-            "url": "{{baseUrl}}/instancias/sueltas",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"fecha\": \"no-es-una-fecha\",\n  \"zona\": \"ALTA\",\n  \"cupoMaximo\": 10,\n  \"precio\": 2000,\n  \"profesorId\": 1\n}"
-            }
+            "url": "{{base}}/instancias/sueltas",
+            "body": { "mode": "raw", "raw": "{\n  \"fecha\": \"2026-06-15T10:00:00.000Z\",\n  \"zona\": \"MEDIA\",\n  \"cupoMaximo\": 8,\n  \"precio\": 1800,\n  \"profesorId\": 1\n}" }
           }
         },
         {
           "name": "Eliminar clase suelta",
           "request": {
             "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenAdmin}}" }],
-            "url": "{{baseUrl}}/instancias/sueltas/{{sueltaId}}"
-          }
-        },
-        {
-          "name": "Eliminar clase suelta — como CLIENTE (debe dar 403)",
-          "request": {
-            "method": "DELETE",
-            "header": [{ "key": "Authorization", "value": "Bearer {{tokenCliente}}" }],
-            "url": "{{baseUrl}}/instancias/sueltas/{{sueltaId}}"
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/instancias/sueltas/{{sueltaId}}"
           }
         }
       ]
     },
+
     {
-      "name": "Health",
+      "name": "📌 Reservas",
+      "item": [
+        {
+          "name": "Crear reserva (CLIENTE) → guarda ID",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const j = pm.response.json();",
+            "if (j.data?.reserva?.id) pm.collectionVariables.set('reservaId', j.data.reserva.id);",
+            "if (j.data?.posicionCola !== undefined) console.log('En cola, posición:', j.data.posicionCola);"
+          ]}}],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{cliente}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base}}/reservas",
+            "body": { "mode": "raw", "raw": "{\n  \"instanciaId\": {{instanciaId}}\n}" }
+          }
+        },
+        {
+          "name": "Mis reservas (CLIENTE)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cliente}}" }],
+            "url": "{{base}}/reservas"
+          }
+        },
+        {
+          "name": "Todas las reservas (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/reservas"
+          }
+        },
+        {
+          "name": "Ver reserva",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/reservas/{{reservaId}}"
+          }
+        },
+        {
+          "name": "Cancelar reserva (CLIENTE)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cliente}}" }],
+            "url": "{{base}}/reservas/{{reservaId}}"
+          }
+        },
+        {
+          "name": "Cancelar reserva (ADMIN)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/reservas/{{reservaId}}"
+          }
+        },
+        {
+          "name": "Cambiar clase (CLIENTE)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{cliente}}" },
+              { "key": "Content-Type",   "value": "application/json" }
+            ],
+            "url": "{{base}}/reservas/{{reservaId}}/cambiar",
+            "body": { "mode": "raw", "raw": "{\n  \"nuevaInstanciaId\": {{instanciaId}}\n}" }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "💳 Pagos",
+      "item": [
+        {
+          "name": "Cargar abono presencial (ADMIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base}}/pagos/abono",
+            "body": { "mode": "raw", "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"cantidadClases\": 5,\n  \"monto\": 10000,\n  \"metodo\": \"EFECTIVO\"\n}" }
+          }
+        },
+        {
+          "name": "Iniciar abono por MP (CLIENTE) → devuelve initPoint",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{cliente}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base}}/pagos/abono/mp",
+            "body": { "mode": "raw", "raw": "{\n  \"cantidadClases\": 5,\n  \"monto\": 10000\n}" }
+          }
+        },
+        {
+          "name": "Registrar complemento — 50% restante (ADMIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{admin}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base}}/pagos/complemento/{{reservaId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"metodo\": \"EFECTIVO\"\n}" }
+          }
+        },
+        {
+          "name": "Ver pagos de una reserva",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/pagos/reserva/{{reservaId}}"
+          }
+        },
+        {
+          "name": "Simular webhook MP (formato nuevo)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": "{{base}}/pagos/webhook",
+            "body": { "mode": "raw", "raw": "{\n  \"type\": \"payment\",\n  \"action\": \"payment.created\",\n  \"data\": { \"id\": \"REEMPLAZAR_CON_PAYMENT_ID\" }\n}" }
+          }
+        },
+        {
+          "name": "Simular webhook MP (formato IPN)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base}}/pagos/webhook?topic=payment&id=REEMPLAZAR_CON_PAYMENT_ID",
+              "query": [
+                { "key": "topic", "value": "payment" },
+                { "key": "id", "value": "REEMPLAZAR_CON_PAYMENT_ID" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "⏳ Cola de Espera",
+      "item": [
+        {
+          "name": "Unirse a la cola (CLIENTE)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cliente}}" }],
+            "url": "{{base}}/cola-espera/{{instanciaId}}"
+          }
+        },
+        {
+          "name": "Ver cola de una clase (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/cola-espera/{{instanciaId}}"
+          }
+        },
+        {
+          "name": "Salir de la cola (CLIENTE)",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{cliente}}" }],
+            "url": "{{base}}/cola-espera/{{instanciaId}}"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "✅ Asistencias",
+      "item": [
+        {
+          "name": "Cargar clase con QR → lista de alumnos",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{profesor}}" }],
+            "url": "{{base}}/asistencias/qr/{{codigoQr}}"
+          }
+        },
+        {
+          "name": "Marcar presente",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{profesor}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base}}/asistencias/{{reservaId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"presente\": true\n}" }
+          }
+        },
+        {
+          "name": "Marcar ausente",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{profesor}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "url": "{{base}}/asistencias/{{reservaId}}",
+            "body": { "mode": "raw", "raw": "{\n  \"presente\": false\n}" }
+          }
+        },
+        {
+          "name": "Ver asistencia completa de una clase (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/asistencias/clase/{{instanciaId}}"
+          }
+        },
+        {
+          "name": "Historial de asistencias de un cliente (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{admin}}" }],
+            "url": "{{base}}/asistencias/cliente/{{clienteId}}"
+          }
+        }
+      ]
+    },
+
+    {
+      "name": "🩺 Health",
       "item": [
         {
           "name": "Health check",
@@ -728,5 +625,6 @@
         }
       ]
     }
+
   ]
 }

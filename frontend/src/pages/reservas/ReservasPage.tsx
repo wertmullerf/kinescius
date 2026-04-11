@@ -176,21 +176,41 @@ function CancelModal({ reserva, onClose, onCancelled }: CancelModalProps) {
   const instancia = reserva?.instancia
   const horas = instancia ? horasHasta(instancia.fecha) : 999
 
-  function politicaTexto(): string {
-    if (!reserva || !instancia) return ''
-    if (reserva.estado === 'PENDIENTE_PAGO') return 'Cancelación sin cargo.'
-    if (reserva.estado === 'RESERVA_PAGA') {
-      return horas >= 24
-        ? 'La seña será reembolsada vía Mercado Pago.'
-        : 'Con menos de 24hs de anticipación, perdés la seña.'
-    }
+  // Determina la política y si hay penalización activa
+  function politica(): { regla: string; consecuencia: string; penaliza: boolean } | null {
+    if (!reserva || !instancia) return null
+
+    // CONFIRMADA = fue abonado al reservar (aunque ahora figure como NO_ABONADO por haber usado su última clase)
     if (reserva.estado === 'CONFIRMADA') {
-      return horas >= 48
-        ? 'Se te devolverá 1 clase a tu saldo.'
-        : 'Con menos de 48hs de anticipación, no se devuelve la clase y quedás sancionado/a.'
+      const penaliza = horas < 48
+      return {
+        regla: 'Abonados: si cancelás con menos de 48hs de anticipación, se aplica sanción para el próximo mes y perdés el descuento del 20%.',
+        consecuencia: penaliza
+          ? 'Estás dentro de las 48hs → quedás sancionado/a y no se devuelve la clase a tu saldo.'
+          : 'Todavía tenés tiempo → se devuelve 1 clase a tu saldo sin penalización.',
+        penaliza,
+      }
     }
-    return ''
+
+    if (reserva.estado === 'RESERVA_PAGA') {
+      const penaliza = horas < 24
+      return {
+        regla: 'No abonados: si cancelás con menos de 24hs de anticipación, no se devuelve la seña.',
+        consecuencia: penaliza
+          ? 'Estás dentro de las 24hs → perdés la seña abonada.'
+          : 'Todavía tenés tiempo → la seña se reembolsa vía Mercado Pago.',
+        penaliza,
+      }
+    }
+
+    if (reserva.estado === 'PENDIENTE_PAGO') {
+      return { regla: '', consecuencia: 'Cancelación sin cargo, no realizaste ningún pago.', penaliza: false }
+    }
+
+    return null
   }
+
+  const pol = politica()
 
   async function handleCancel() {
     if (!reserva) return
@@ -225,10 +245,26 @@ function CancelModal({ reserva, onClose, onCancelled }: CancelModalProps) {
           </div>
         )}
 
-        {politicaTexto() && (
-          <div className="flex items-start gap-2 text-sm text-text-secondary">
-            <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5 text-status-pendiente" />
-            <p>{politicaTexto()}</p>
+        {pol && (
+          <div className="space-y-2">
+            {pol.regla && (
+              <div className="flex items-start gap-2 text-xs text-text-secondary bg-surface-muted rounded-xl px-3 py-2.5">
+                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0 mt-0.5 text-text-secondary" />
+                <p>{pol.regla}</p>
+              </div>
+            )}
+            <div className={[
+              'flex items-start gap-2 text-sm rounded-xl px-3 py-2.5',
+              pol.penaliza
+                ? 'bg-status-cancelada/10 text-status-cancelada'
+                : 'bg-brand-green/10 text-brand-green-dark',
+            ].join(' ')}>
+              <ExclamationTriangleIcon className={[
+                'w-4 h-4 flex-shrink-0 mt-0.5',
+                pol.penaliza ? 'text-status-cancelada' : 'text-brand-green',
+              ].join(' ')} />
+              <p className="font-medium">{pol.consecuencia}</p>
+            </div>
           </div>
         )}
 
@@ -243,7 +279,7 @@ function CancelModal({ reserva, onClose, onCancelled }: CancelModalProps) {
             Volver
           </Button>
           <Button variant="danger" onClick={handleCancel} loading={loading} fullWidth>
-            Cancelar reserva
+            Confirmar cancelación
           </Button>
         </div>
       </div>
@@ -494,6 +530,13 @@ function ExplorarTab({ reservas, onReservaCreated }: ExplorarTabProps) {
   const [loadingInst,  setLoadingInst]  = useState(false)
   const [bookingId,    setBookingId]    = useState<number | null>(null)
   const [inQueue,      setInQueue]      = useState<Set<number>>(new Set())
+
+  // Cargar las colas activas del usuario para mostrar "Ya estás en lista de espera"
+  useEffect(() => {
+    colaApi.misEntradas().then(entries => {
+      setInQueue(new Set(entries.map(e => e.instanciaId)))
+    }).catch(() => { /* silencioso: si falla, el usuario ve el botón de unirse igualmente */ })
+  }, [])
 
   // Filtros
   const [zonaFilter,     setZonaFilter]     = useState<ZonaClase | null>(null)

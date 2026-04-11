@@ -119,6 +119,19 @@ export const colaService = {
     });
   },
 
+  /** Lista todas las entradas de cola del usuario autenticado (con datos de instancia). */
+  async misEntradas(clienteId: number) {
+    return prisma.colaEspera.findMany({
+      where: { clienteId },
+      include: {
+        instancia: {
+          include: { profesor: { select: { id: true, nombre: true, apellido: true } } },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+  },
+
   /**
    * Notifica al primer cliente de la cola cuando se libera un cupo.
    * Establece expiraEn = ahora + 5hs y programa expiración automática.

@@ -1,14 +1,18 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, Fragment } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
+  ChevronDownIcon,
   PlusIcon,
   PencilSquareIcon,
   TrashIcon,
   CalendarDaysIcon,
   ExclamationTriangleIcon,
+  QrCodeIcon,
+  XMarkIcon,
 } from '@heroicons/react/24/outline'
+import { QRCodeSVG } from 'qrcode.react'
 import { clasesApi } from '@/api/endpoints/clases'
 import { profesoresApi } from '@/api/endpoints/profesores'
 import { Button } from '@/components/ui/Button'
@@ -22,6 +26,12 @@ import type { AgendaMensual, ClaseRecurrente, ClaseInstancia, Profesor, ZonaClas
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 const DIAS_SEMANA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']
+
+// La hora se guarda como ISO (1970-01-01T09:00:00Z) — leer UTC para evitar desfase de timezone
+function formatHoraUtc(horaIso: string): string {
+  const d = new Date(horaIso)
+  return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`
+}
 
 const ZONA_STYLES: Record<ZonaClase, { bg: string; color: string }> = {
   ALTA:  { bg: 'rgba(33,101,88,0.10)',  color: '#216558' },
@@ -87,7 +97,7 @@ function PatronModal({ open, agendaId, patron, profesores, onClose, onSaved }: P
       setError('')
       setSuccess('')
       setForm(patron
-        ? { diaSemana: patron.diaSemana, hora: patron.hora, zona: patron.zona,
+        ? { diaSemana: patron.diaSemana, hora: formatHoraUtc(patron.hora), zona: patron.zona,
             cupoMaximo: patron.cupoMaximo, duracion: patron.duracion,
             precio: patron.precio, profesorId: patron.profesorId }
         : { ...PATRON_INITIAL, profesorId: profesores[0]?.id ?? 0 }
@@ -374,6 +384,136 @@ function SueltaModal({ open, profesores, onClose, onCreated }: SueltaModalProps)
   )
 }
 
+// ─── Modal — Editar instancia individual (excepción) ─────────────────────────
+
+interface EditarInstanciaModalProps {
+  open: boolean
+  instancia: ClaseInstancia | null
+  profesores: Profesor[]
+  onClose: () => void
+  onSaved: (updated: ClaseInstancia) => void
+}
+
+function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }: EditarInstanciaModalProps) {
+  const [zona,       setZona]       = useState<ZonaClase>('BAJA')
+  const [cupoMaximo, setCupoMaximo] = useState(6)
+  const [precio,     setPrecio]     = useState(0)
+  const [profesorId, setProfesorId] = useState(0)
+  const [motivo,     setMotivo]     = useState('')
+  const [loading,    setLoading]    = useState(false)
+  const [error,      setError]      = useState('')
+
+  useEffect(() => {
+    if (open && instancia) {
+      setZona(instancia.zona)
+      setCupoMaximo(instancia.cupoMaximo)
+      setPrecio(instancia.precio)
+      setProfesorId(instancia.profesor?.id ?? 0)
+      setMotivo('')
+      setError('')
+    }
+  }, [open, instancia])
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!motivo.trim()) { setError('El motivo de la excepción es obligatorio'); return }
+    if (!instancia) return
+    setLoading(true)
+    setError('')
+    try {
+      const updated = await clasesApi.editarInstancia(instancia.id, {
+        zona, cupoMaximo, precio, profesorId, motivoExcepcion: motivo,
+      })
+      onSaved(updated)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al guardar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!instancia) return null
+  const fecha = new Date(instancia.fecha)
+
+  return (
+    <Modal open={open} onClose={onClose} title="Editar clase específica" maxWidth="sm">
+      {/* Info de la clase */}
+      <div className="mb-4 pb-4 border-b border-surface-border">
+        <p className="text-sm font-semibold text-text-primary capitalize">
+          {fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
+        <p className="text-xs text-text-secondary mt-0.5">
+          {fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+        {instancia.esExcepcion && (
+          <span className="inline-block mt-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+            Excepción actual: {instancia.motivoExcepcion}
+          </span>
+        )}
+      </div>
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Zona */}
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium text-text-primary">Zona</label>
+          <select
+            value={zona}
+            onChange={e => setZona(e.target.value as ZonaClase)}
+            className="w-full rounded-lg bg-surface-muted text-text-primary border border-transparent outline-none focus:border-brand-green px-3 py-2.5 text-sm"
+          >
+            <option value="ALTA">Alta</option>
+            <option value="MEDIA">Media</option>
+            <option value="BAJA">Baja</option>
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Input id="ei-cupo"   label="Cupo"      type="number" min={1} value={cupoMaximo}
+            onChange={e => setCupoMaximo(Number(e.target.value))} required />
+          <Input id="ei-precio" label="Precio ($)" type="number" min={0} value={precio}
+            onChange={e => setPrecio(Number(e.target.value))} required />
+        </div>
+
+        {/* Profesor */}
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium text-text-primary">Profesor</label>
+          <select
+            value={profesorId}
+            onChange={e => setProfesorId(Number(e.target.value))}
+            className="w-full rounded-lg bg-surface-muted text-text-primary border border-transparent outline-none focus:border-brand-green px-3 py-2.5 text-sm"
+          >
+            {profesores.map(p => (
+              <option key={p.id} value={p.id}>{p.nombre} {p.apellido}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Motivo (obligatorio) */}
+        <div className="flex flex-col gap-1">
+          <label className="text-sm font-medium text-text-primary">
+            Motivo de la excepción <span className="text-status-cancelada">*</span>
+          </label>
+          <input
+            type="text"
+            placeholder="Ej: Feriado, cambio de horario…"
+            value={motivo}
+            onChange={e => setMotivo(e.target.value)}
+            className="w-full rounded-lg bg-surface-muted text-text-primary border border-transparent outline-none focus:border-brand-green px-3 py-2.5 text-sm"
+          />
+        </div>
+
+        {error && <p className="text-sm text-status-cancelada">{error}</p>}
+
+        <div className="flex gap-3 pt-1">
+          <Button variant="secondary" onClick={onClose} type="button" fullWidth>Cancelar</Button>
+          <Button type="submit" loading={loading} fullWidth>Guardar excepción</Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 // ─── Delete confirm ───────────────────────────────────────────────────────────
 
 interface DeletePatronModalProps {
@@ -435,6 +575,46 @@ function DeletePatronModal({ open, patron, agendaId, onClose, onDeleted }: Delet
   )
 }
 
+// ─── Modal — QR de clase ──────────────────────────────────────────────────────
+
+interface QrModalProps {
+  instancia: ClaseInstancia | null
+  onClose: () => void
+}
+
+function QrModal({ instancia, onClose }: QrModalProps) {
+  if (!instancia) return null
+  const fecha = new Date(instancia.fecha)
+  return (
+    <Modal open={!!instancia} onClose={onClose} title="QR de la clase" maxWidth="sm">
+      <div className="flex flex-col items-center gap-4">
+        <p className="text-sm text-text-secondary text-center">
+          Mostrá este código a tus pacientes para que puedan registrar su asistencia.
+        </p>
+        <div className="p-4 bg-white rounded-2xl border border-surface-border shadow-card">
+          <QRCodeSVG value={instancia.codigoQr} size={220} level="M" />
+        </div>
+        <div className="text-center">
+          <p className="text-sm font-semibold text-text-primary capitalize">
+            {fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+          </p>
+          <p className="text-xs text-text-secondary mt-0.5">
+            {fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+            {' · '}Zona {instancia.zona}
+          </p>
+        </div>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <XMarkIcon className="w-4 h-4" />
+          Cerrar
+        </button>
+      </div>
+    </Modal>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 type Tab = 'agenda' | 'sueltas'
@@ -466,6 +646,12 @@ export function ClasesPage() {
   const [editingPatron,   setEditingPatron]   = useState<ClaseRecurrente | null>(null)
   const [deletePatron,    setDeletePatron]    = useState<ClaseRecurrente | null>(null)
   const [modalSuelta,     setModalSuelta]     = useState(false)
+  const [qrInstancia,     setQrInstancia]     = useState<ClaseInstancia | null>(null)
+
+  // Expand instancias por patrón
+  const [expandedPatronId,   setExpandedPatronId]   = useState<number | null>(null)
+  const [instanciasLoaded,   setInstanciasLoaded]   = useState(false)
+  const [editingInstancia,   setEditingInstancia]   = useState<ClaseInstancia | null>(null)
 
   // Profesor lookup map
   const profesorMap = useMemo(
@@ -512,10 +698,10 @@ export function ClasesPage() {
     Promise.all(promises).finally(() => setLoadingData(false))
   }, [agenda, tab])
 
-  // Sueltas = instancias sin recurrenteId
+  // Admin ve solo clases sueltas; Profesor ve todas las instancias del mes (para acceder al QR)
   const sueltas = useMemo(
-    () => instancias.filter(i => !i.recurrenteId),
-    [instancias]
+    () => isAdmin ? instancias.filter(i => !i.recurrenteId) : instancias,
+    [instancias, isAdmin]
   )
 
   const filteredSueltas = useMemo(() => {
@@ -573,6 +759,20 @@ export function ClasesPage() {
     setRecurrentes(prev => prev.filter(p => p.id !== id))
   }
 
+  async function handleExpandPatron(patronId: number) {
+    if (expandedPatronId === patronId) { setExpandedPatronId(null); return }
+    setExpandedPatronId(patronId)
+    if (!instanciasLoaded && agenda) {
+      const items = await clasesApi.listarInstancias(agenda.id)
+      setInstancias(items)
+      setInstanciasLoaded(true)
+    }
+  }
+
+  function handleInstanciaSaved(updated: ClaseInstancia) {
+    setInstancias(prev => prev.map(i => i.id === updated.id ? updated : i))
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -595,7 +795,7 @@ export function ClasesPage() {
                 : 'text-text-secondary hover:text-text-primary',
             ].join(' ')}
           >
-            {t === 'agenda' ? 'Agenda Mensual' : 'Clases Sueltas'}
+            {t === 'agenda' ? 'Agenda Mensual' : isAdmin ? 'Clases Sueltas' : 'Mis Clases'}
           </button>
         ))}
       </div>
@@ -684,9 +884,9 @@ export function ClasesPage() {
                       <table className="w-full">
                         <thead>
                           <tr className="border-b border-surface-border bg-surface-muted/50">
-                            {['Día', 'Hora', 'Zona', 'Profesor', 'Cupo', 'Precio', ''].map(h => (
+                            {['', 'Día', 'Hora', 'Zona', 'Profesor', 'Cupo', 'Precio', ''].map((h, i) => (
                               <th
-                                key={h}
+                                key={i}
                                 className="text-left px-4 py-3 text-[10px] font-semibold uppercase tracking-wider text-text-secondary"
                               >
                                 {h}
@@ -694,59 +894,127 @@ export function ClasesPage() {
                             ))}
                           </tr>
                         </thead>
-                        <motion.tbody
-                          variants={staggerContainer}
-                          initial="initial"
-                          animate="animate"
-                        >
+                        <tbody>
                           {recurrentes.map(p => {
                             const prof = profesorMap.get(p.profesorId)
+                            const isExpanded = expandedPatronId === p.id
+                            const instanciasDelPatron = instancias
+                              .filter(i => i.recurrenteId === p.id)
+                              .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
+
                             return (
-                              <motion.tr
-                                key={p.id}
-                                variants={staggerItem}
-                                className="border-b border-surface-border last:border-0 hover:bg-surface-muted/40 transition-colors"
-                              >
-                                <td className="px-4 py-3 text-sm text-text-primary font-medium">
-                                  {DIAS_SEMANA[p.diaSemana]}
-                                </td>
-                                <td className="px-4 py-3 text-sm text-text-secondary">
-                                  {p.hora}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <ZonaBadge zona={p.zona} />
-                                </td>
-                                <td className="px-4 py-3 text-sm text-text-secondary">
-                                  {prof ? `${prof.nombre} ${prof.apellido}` : `#${p.profesorId}`}
-                                </td>
-                                <td className="px-4 py-3 text-sm text-text-secondary">
-                                  {p.cupoMaximo} personas
-                                </td>
-                                <td className="px-4 py-3 text-sm text-text-secondary">
-                                  {formatCurrency(p.precio)}
-                                </td>
-                                <td className="px-4 py-3">
-                                  {isAdmin && (
-                                    <div className="flex items-center gap-1">
-                                      <button
-                                        onClick={() => { setEditingPatron(p); setModalPatron(true) }}
-                                        className="p-1.5 rounded-lg text-text-secondary hover:text-brand-green-dark hover:bg-brand-green-dark/10 transition-colors"
-                                      >
-                                        <PencilSquareIcon className="w-4 h-4" />
-                                      </button>
-                                      <button
-                                        onClick={() => setDeletePatron(p)}
-                                        className="p-1.5 rounded-lg text-text-secondary hover:text-status-cancelada hover:bg-status-cancelada/10 transition-colors"
-                                      >
-                                        <TrashIcon className="w-4 h-4" />
-                                      </button>
-                                    </div>
-                                  )}
-                                </td>
-                              </motion.tr>
+                              <Fragment key={p.id}>
+                                <tr
+                                  className="border-b border-surface-border hover:bg-surface-muted/40 transition-colors"
+                                >
+                                  {/* Expand toggle */}
+                                  <td className="pl-3 pr-1 py-3">
+                                    <button
+                                      onClick={() => handleExpandPatron(p.id)}
+                                      className="p-1 rounded-lg text-text-secondary hover:text-brand-green-dark hover:bg-brand-green-dark/10 transition-colors"
+                                      title={isExpanded ? 'Ocultar clases' : 'Ver clases del mes'}
+                                    >
+                                      <ChevronDownIcon
+                                        className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                      />
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-text-primary font-medium">
+                                    {DIAS_SEMANA[p.diaSemana]}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-text-secondary">
+                                    {formatHoraUtc(p.hora)}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <ZonaBadge zona={p.zona} />
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-text-secondary">
+                                    {prof ? `${prof.nombre} ${prof.apellido}` : `#${p.profesorId}`}
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-text-secondary">
+                                    {p.cupoMaximo} personas
+                                  </td>
+                                  <td className="px-4 py-3 text-sm text-text-secondary">
+                                    {formatCurrency(p.precio)}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {isAdmin && (
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          onClick={() => { setEditingPatron(p); setModalPatron(true) }}
+                                          className="p-1.5 rounded-lg text-text-secondary hover:text-brand-green-dark hover:bg-brand-green-dark/10 transition-colors"
+                                          title="Editar todas las clases de este patrón"
+                                        >
+                                          <PencilSquareIcon className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => setDeletePatron(p)}
+                                          className="p-1.5 rounded-lg text-text-secondary hover:text-status-cancelada hover:bg-status-cancelada/10 transition-colors"
+                                        >
+                                          <TrashIcon className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+
+                                {/* Fila expandida: instancias del patrón */}
+                                {isExpanded && (
+                                  <tr className="border-b border-surface-border bg-surface-muted/30">
+                                    <td colSpan={8} className="px-6 py-3">
+                                      {instanciasDelPatron.length === 0 ? (
+                                        <p className="text-xs text-text-secondary py-2">Cargando clases…</p>
+                                      ) : (
+                                        <div className="space-y-1">
+                                          <p className="text-[10px] font-semibold uppercase tracking-wider text-text-secondary mb-2">
+                                            Clases del mes — hacé clic en el lápiz para cambiar una sola
+                                          </p>
+                                          {instanciasDelPatron.map(inst => {
+                                            const fd = new Date(inst.fecha)
+                                            return (
+                                              <div
+                                                key={inst.id}
+                                                className="flex items-center justify-between gap-4 py-1.5 px-3 rounded-xl hover:bg-surface transition-colors"
+                                              >
+                                                <div className="flex items-center gap-3 min-w-0">
+                                                  <span className="text-sm text-text-primary capitalize">
+                                                    {fd.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })}
+                                                  </span>
+                                                  {inst.esExcepcion && inst.motivoExcepcion !== 'CANCELADA' && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 font-medium">
+                                                      Excepción
+                                                    </span>
+                                                  )}
+                                                  {inst.motivoExcepcion === 'CANCELADA' && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 border border-red-200 font-medium">
+                                                      Cancelada
+                                                    </span>
+                                                  )}
+                                                  {inst.esExcepcion && inst.zona !== p.zona && (
+                                                    <ZonaBadge zona={inst.zona} />
+                                                  )}
+                                                </div>
+                                                {isAdmin && inst.motivoExcepcion !== 'CANCELADA' && (
+                                                  <button
+                                                    onClick={() => setEditingInstancia(inst)}
+                                                    className="flex-shrink-0 p-1.5 rounded-lg text-text-secondary hover:text-brand-green-dark hover:bg-brand-green-dark/10 transition-colors"
+                                                    title="Editar solo esta clase"
+                                                  >
+                                                    <PencilSquareIcon className="w-3.5 h-3.5" />
+                                                  </button>
+                                                )}
+                                              </div>
+                                            )
+                                          })}
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                )}
+                              </Fragment>
                             )
                           })}
-                        </motion.tbody>
+                        </tbody>
                       </table>
                     </div>
                   )}
@@ -855,6 +1123,17 @@ export function ClasesPage() {
                                 {formatCurrency(inst.precio)}
                               </span>
                             </div>
+
+                            {/* Botón QR para profesor */}
+                            {!isAdmin && (
+                              <button
+                                onClick={() => setQrInstancia(inst)}
+                                className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-surface-border text-xs font-medium text-text-secondary hover:text-brand-green-dark hover:border-brand-green/40 hover:bg-brand-green/5 transition-colors"
+                              >
+                                <QrCodeIcon className="w-4 h-4" />
+                                Ver QR de la clase
+                              </button>
+                            )}
                           </motion.div>
                         )
                       })}
@@ -893,6 +1172,19 @@ export function ClasesPage() {
         profesores={profesores}
         onClose={() => setModalSuelta(false)}
         onCreated={handleSueltaCreated}
+      />
+
+      <QrModal
+        instancia={qrInstancia}
+        onClose={() => setQrInstancia(null)}
+      />
+
+      <EditarInstanciaModal
+        open={editingInstancia !== null}
+        instancia={editingInstancia}
+        profesores={profesores}
+        onClose={() => setEditingInstancia(null)}
+        onSaved={handleInstanciaSaved}
       />
     </motion.div>
   )

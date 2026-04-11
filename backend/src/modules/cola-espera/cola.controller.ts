@@ -29,6 +29,15 @@ export const colaController = {
     }
   },
 
+  async misEntradas(req: Request, res: Response, next: NextFunction) {
+    try {
+      const data = await colaService.misEntradas(req.user!.id);
+      ok(res, data);
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async listar(req: Request, res: Response, next: NextFunction) {
     try {
       const instanciaId = Number(req.params.instanciaId);

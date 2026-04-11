@@ -4,9 +4,12 @@ import {
   MagnifyingGlassIcon,
   XMarkIcon,
   PlusIcon,
+  BanknotesIcon,
+  UserIcon,
 } from '@heroicons/react/24/outline'
 import { pagosApi } from '@/api/endpoints/pagos'
 import type { PagoAbonoConCliente, PagoConReserva } from '@/api/endpoints/pagos'
+import { reservasApi } from '@/api/endpoints/reservas'
 import { usuariosApi } from '@/api/endpoints/usuarios'
 import type { UsuarioAdmin } from '@/api/endpoints/usuarios'
 import { configApi } from '@/api/endpoints/config'
@@ -14,7 +17,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { fadeInUp } from '@/utils/animations'
 import { formatCurrency, formatDate, tipoPagoLabel, metodoPagoLabel, zonaLabel } from '@/utils/formatters'
-import type { MetodoPago, TipoPago } from '@/types'
+import type { MetodoPago, TipoPago, Reserva } from '@/types'
 
 const METODOS: MetodoPago[] = ['EFECTIVO', 'TRANSFERENCIA', 'MERCADO_PAGO']
 
@@ -358,9 +361,197 @@ function HistorialTab() {
   )
 }
 
+// ─── Tab: Completar pagos ─────────────────────────────────────────────────────
+
+function ComplementarTab() {
+  const [todasReservas, setTodasReservas] = useState<Reserva[]>([])
+  const [loading,       setLoading]       = useState(true)
+  const [busqueda,      setBusqueda]      = useState('')
+
+  // Modal de complemento
+  const [reservaTarget, setReservaTarget] = useState<Reserva | null>(null)
+  const [metodo,        setMetodo]        = useState<MetodoPago>('EFECTIVO')
+  const [referencia,    setReferencia]    = useState('')
+  const [saving,        setSaving]        = useState(false)
+  const [saveError,     setSaveError]     = useState('')
+  const [saveOk,        setSaveOk]        = useState(false)
+
+  useEffect(() => {
+    setLoading(true)
+    reservasApi.listar()
+      .then(rs => setTodasReservas(rs.filter(r => r.estado === 'RESERVA_PAGA')))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const reservasFiltradas = todasReservas.filter(r => {
+    if (!busqueda) return true
+    const q = busqueda.toLowerCase()
+    const c = r.cliente
+    return c
+      ? `${c.nombre} ${c.apellido} ${(c as any).dni ?? ''} ${c.email}`.toLowerCase().includes(q)
+      : false
+  })
+
+  async function handleComplementar() {
+    if (!reservaTarget) return
+    setSaving(true)
+    setSaveError('')
+    try {
+      await pagosApi.registrarComplemento(reservaTarget.id, { metodo, referencia: referencia || undefined })
+      setSaveOk(true)
+      setTodasReservas(prev => prev.filter(r => r.id !== reservaTarget.id))
+      setTimeout(() => { setReservaTarget(null); setSaveOk(false); setReferencia('') }, 1200)
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Error al registrar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      {/* Buscador (filtro client-side) */}
+      <div className="relative">
+        <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
+        <input
+          type="text"
+          placeholder="Filtrar por nombre o DNI del cliente…"
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          className="w-full pl-9 pr-8 py-2.5 text-sm rounded-xl border border-surface-border bg-surface text-text-primary focus:outline-none focus:border-brand-green"
+        />
+        {busqueda && (
+          <button onClick={() => setBusqueda('')} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-secondary hover:text-text-primary">
+            <XMarkIcon className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
+      {/* Lista de reservas pendientes */}
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="w-5 h-5 border-2 border-brand-green border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : reservasFiltradas.length === 0 ? (
+        <div className="bg-surface-muted rounded-2xl p-5 text-center text-sm text-text-secondary">
+          {busqueda ? 'Sin resultados para esta búsqueda.' : 'No hay reservas pendientes de complemento.'}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
+            {reservasFiltradas.length} reserva{reservasFiltradas.length !== 1 ? 's' : ''} pendiente{reservasFiltradas.length !== 1 ? 's' : ''} de complemento
+          </p>
+          {reservasFiltradas.map(r => {
+            const inst = r.instancia
+            const montoTotal    = inst ? Number(inst.precio) : 0
+            const montoPagado   = Number(r.montoPagado)
+            const montoFaltante = montoTotal - montoPagado
+            return (
+              <div key={r.id} className="bg-surface rounded-2xl border border-surface-border p-4 flex items-center justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  {r.cliente && (
+                    <p className="text-sm font-semibold text-text-primary">
+                      {r.cliente.apellido}, {r.cliente.nombre}
+                    </p>
+                  )}
+                  {inst ? (
+                    <p className="text-xs text-text-secondary mt-0.5 capitalize">
+                      {new Date(inst.fecha).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                      {' · '}Zona {zonaLabel[inst.zona]}
+                      {' · '}Seña: {formatCurrency(montoPagado)}
+                      {' · '}<span className="text-status-pendiente font-medium">Falta: {formatCurrency(montoFaltante)}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-text-secondary">Reserva #{r.id}</p>
+                  )}
+                </div>
+                <Button
+                  icon={<BanknotesIcon className="w-4 h-4" />}
+                  onClick={() => { setReservaTarget(r); setMetodo('EFECTIVO'); setReferencia(''); setSaveError(''); setSaveOk(false) }}
+                  size="sm"
+                >
+                  Registrar cobro
+                </Button>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Modal de complemento */}
+      <Modal open={!!reservaTarget} onClose={() => setReservaTarget(null)} title="Registrar cobro del complemento">
+        {reservaTarget && (
+          <div className="space-y-4">
+            {reservaTarget.cliente && (
+              <p className="text-sm font-medium text-text-primary">
+                {reservaTarget.cliente.apellido}, {reservaTarget.cliente.nombre}
+              </p>
+            )}
+            {reservaTarget.instancia && (
+              <div className="bg-surface-muted rounded-xl p-3 text-sm">
+                <p className="font-medium text-text-primary capitalize">
+                  {new Date(reservaTarget.instancia.fecha).toLocaleDateString('es-AR', {
+                    weekday: 'long', day: 'numeric', month: 'long',
+                  })}
+                </p>
+                <p className="text-text-secondary mt-0.5">
+                  Monto a cobrar:{' '}
+                  <span className="font-semibold text-text-primary">
+                    {formatCurrency(Number(reservaTarget.instancia.precio) - Number(reservaTarget.montoPagado))}
+                  </span>
+                </p>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">Método de pago</label>
+              <select
+                value={metodo}
+                onChange={e => setMetodo(e.target.value as MetodoPago)}
+                className="w-full px-3 py-2 text-sm rounded-xl border border-surface-border bg-surface text-text-primary focus:outline-none focus:border-brand-green"
+              >
+                {METODOS.map(m => <option key={m} value={m}>{metodoPagoLabel[m]}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-text-secondary mb-1">
+                Referencia <span className="text-text-secondary font-normal">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="Nro. de recibo, transferencia…"
+                value={referencia}
+                onChange={e => setReferencia(e.target.value)}
+                className="w-full px-3 py-2 text-sm rounded-xl border border-surface-border bg-surface text-text-primary focus:outline-none focus:border-brand-green"
+              />
+            </div>
+
+            {saveError && <p className="text-xs text-status-cancelada">{saveError}</p>}
+            {saveOk    && <p className="text-xs text-brand-green font-medium">¡Complemento registrado!</p>}
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" onClick={() => setReservaTarget(null)} fullWidth>Cancelar</Button>
+              <Button onClick={handleComplementar} loading={saving} disabled={saveOk} fullWidth>
+                Confirmar cobro
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'abonos' | 'historial'
+type Tab = 'abonos' | 'historial' | 'complementar'
+
+const TAB_LABELS: Record<Tab, string> = {
+  abonos:       'Abonos',
+  historial:    'Pagos de reservas',
+  complementar: 'Completar pagos',
+}
 
 export function PagosPage() {
   const [tab, setTab] = useState<Tab>('abonos')
@@ -370,12 +561,12 @@ export function PagosPage() {
       <div className="mb-6">
         <h1 className="text-xl font-bold text-text-primary">Pagos</h1>
         <p className="text-text-secondary text-sm mt-0.5">
-          Abonos y pagos de reservas.
+          Abonos, pagos de reservas y cobro de complementos.
         </p>
       </div>
 
       <div className="flex gap-1 bg-surface-muted p-1 rounded-xl w-fit mb-6">
-        {(['abonos', 'historial'] as Tab[]).map(t => (
+        {(['abonos', 'historial', 'complementar'] as Tab[]).map(t => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -386,12 +577,14 @@ export function PagosPage() {
                 : 'text-text-secondary hover:text-text-primary',
             ].join(' ')}
           >
-            {t === 'abonos' ? 'Abonos' : 'Pagos de reservas'}
+            {TAB_LABELS[t]}
           </button>
         ))}
       </div>
 
-      {tab === 'abonos' ? <AbonossTab /> : <HistorialTab />}
+      {tab === 'abonos'       && <AbonossTab />}
+      {tab === 'historial'    && <HistorialTab />}
+      {tab === 'complementar' && <ComplementarTab />}
     </motion.div>
   )
 }

@@ -16,4 +16,10 @@ export const authApi = {
   logout: () => post<void>('/auth/logout'),
 
   me: () => get<AuthUser>('/auth/me'),
+
+  forgotPassword: (email: string) =>
+    post<void>('/auth/forgot-password', { email }),
+
+  resetPassword: (token: string, password: string) =>
+    post<void>('/auth/reset-password', { token, password }),
 }
