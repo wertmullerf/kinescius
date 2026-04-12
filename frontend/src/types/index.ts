@@ -28,6 +28,7 @@ export interface Profesor {
   nombre: string
   apellido: string
   dni: string
+  imagenUrl?: string
 }
 
 export interface ClaseInstancia {

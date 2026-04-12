@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   PlusIcon,
@@ -6,6 +6,7 @@ import {
   TrashIcon,
   UserGroupIcon,
   ExclamationTriangleIcon,
+  CameraIcon,
 } from '@heroicons/react/24/outline'
 import { profesoresApi } from '@/api/endpoints/profesores'
 import { Button } from '@/components/ui/Button'
@@ -203,12 +204,38 @@ export function ProfesoresPage() {
   // Modal eliminar
   const [deleteTarget, setDeleteTarget] = useState<Profesor | null>(null)
 
+  // Upload de imagen
+  const fileInputRef   = useRef<HTMLInputElement>(null)
+  const [uploadingId,  setUploadingId]  = useState<number | null>(null)
+  const [uploadTarget, setUploadTarget] = useState<number | null>(null)
+
   useEffect(() => {
     profesoresApi.listar()
       .then(setProfesores)
       .catch(e => setPageError(e instanceof Error ? e.message : 'Error al cargar'))
       .finally(() => setLoading(false))
   }, [])
+
+  function handleImageClick(profesorId: number) {
+    setUploadTarget(profesorId)
+    fileInputRef.current?.click()
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file || !uploadTarget) return
+    e.target.value = ''
+    setUploadingId(uploadTarget)
+    try {
+      const updated = await profesoresApi.subirImagen(uploadTarget, file)
+      setProfesores(prev => prev.map(p => p.id === updated.id ? updated : p))
+    } catch {
+      // error silencioso — podría mostrarse un toast
+    } finally {
+      setUploadingId(null)
+      setUploadTarget(null)
+    }
+  }
 
   function openCreate() {
     setEditTarget(null)
@@ -301,11 +328,34 @@ export function ProfesoresPage() {
                   >
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        {/* Avatar con iniciales */}
-                        <div className="w-9 h-9 rounded-full bg-brand-green-dark/10 flex items-center justify-center flex-shrink-0">
-                          <span className="text-xs font-semibold text-brand-green-dark">
-                            {getInitials(p.nombre, p.apellido)}
-                          </span>
+                        {/* Avatar: foto o iniciales */}
+                        <div className="relative flex-shrink-0 group">
+                          {p.imagenUrl ? (
+                            <img
+                              src={p.imagenUrl}
+                              alt={`${p.nombre} ${p.apellido}`}
+                              className="w-10 h-10 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-brand-green-dark/10 flex items-center justify-center">
+                              <span className="text-xs font-semibold text-brand-green-dark">
+                                {getInitials(p.nombre, p.apellido)}
+                              </span>
+                            </div>
+                          )}
+                          {/* Overlay cámara al hacer hover */}
+                          <button
+                            onClick={() => handleImageClick(p.id)}
+                            disabled={uploadingId === p.id}
+                            className="absolute inset-0 rounded-full bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                            title="Cambiar foto"
+                          >
+                            {uploadingId === p.id ? (
+                              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                            ) : (
+                              <CameraIcon className="w-4 h-4 text-white" />
+                            )}
+                          </button>
                         </div>
                         <span className="text-sm font-medium text-text-primary">
                           {p.nombre} {p.apellido}
@@ -354,6 +404,15 @@ export function ProfesoresPage() {
         profesor={deleteTarget}
         onClose={() => setDeleteTarget(null)}
         onDeleted={handleDeleted}
+      />
+
+      {/* Input oculto para seleccionar imagen */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
       />
     </motion.div>
   )

@@ -11,6 +11,7 @@ import {
   ExclamationTriangleIcon,
   QrCodeIcon,
   XMarkIcon,
+  NoSymbolIcon,
 } from '@heroicons/react/24/outline'
 import { QRCodeSVG } from 'qrcode.react'
 import { clasesApi } from '@/api/endpoints/clases'
@@ -81,8 +82,6 @@ const PATRON_INITIAL = {
   hora: '09:00',
   zona: 'BAJA' as ZonaClase,
   cupoMaximo: 6,
-  duracion: 60,
-  precio: 5000,
   profesorId: 0,
 }
 
@@ -98,8 +97,7 @@ function PatronModal({ open, agendaId, patron, profesores, onClose, onSaved }: P
       setSuccess('')
       setForm(patron
         ? { diaSemana: patron.diaSemana, hora: formatHoraUtc(patron.hora), zona: patron.zona,
-            cupoMaximo: patron.cupoMaximo, duracion: patron.duracion,
-            precio: patron.precio, profesorId: patron.profesorId }
+            cupoMaximo: patron.cupoMaximo, profesorId: patron.profesorId }
         : { ...PATRON_INITIAL, profesorId: profesores[0]?.id ?? 0 }
       )
     }
@@ -181,35 +179,15 @@ function PatronModal({ open, agendaId, patron, profesores, onClose, onSaved }: P
           </select>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Input
-            id="pcupo"
-            label="Cupo"
-            type="number"
-            min={1}
-            value={form.cupoMaximo}
-            onChange={e => set('cupoMaximo', Number(e.target.value))}
-            required
-          />
-          <Input
-            id="pduracion"
-            label="Duración (min)"
-            type="number"
-            min={15}
-            value={form.duracion}
-            onChange={e => set('duracion', Number(e.target.value))}
-            required
-          />
-          <Input
-            id="pprecio"
-            label="Precio ($)"
-            type="number"
-            min={0}
-            value={form.precio}
-            onChange={e => set('precio', Number(e.target.value))}
-            required
-          />
-        </div>
+        <Input
+          id="pcupo"
+          label="Cupo máximo"
+          type="number"
+          min={1}
+          value={form.cupoMaximo}
+          onChange={e => set('cupoMaximo', Number(e.target.value))}
+          required
+        />
 
         {/* Profesor */}
         <div className="flex flex-col gap-1">
@@ -257,8 +235,6 @@ const SUELTA_INITIAL = {
   fecha: '',
   zona: 'BAJA' as ZonaClase,
   cupoMaximo: 6,
-  duracion: 60,
-  precio: 5000,
   profesorId: 0,
 }
 
@@ -325,35 +301,15 @@ function SueltaModal({ open, profesores, onClose, onCreated }: SueltaModalProps)
           </select>
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
-          <Input
-            id="scupo"
-            label="Cupo"
-            type="number"
-            min={1}
-            value={form.cupoMaximo}
-            onChange={e => set('cupoMaximo', Number(e.target.value))}
-            required
-          />
-          <Input
-            id="sduracion"
-            label="Duración (min)"
-            type="number"
-            min={15}
-            value={form.duracion}
-            onChange={e => set('duracion', Number(e.target.value))}
-            required
-          />
-          <Input
-            id="sprecio"
-            label="Precio ($)"
-            type="number"
-            min={0}
-            value={form.precio}
-            onChange={e => set('precio', Number(e.target.value))}
-            required
-          />
-        </div>
+        <Input
+          id="scupo"
+          label="Cupo máximo"
+          type="number"
+          min={1}
+          value={form.cupoMaximo}
+          onChange={e => set('cupoMaximo', Number(e.target.value))}
+          required
+        />
 
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-text-primary">Profesor</label>
@@ -395,9 +351,9 @@ interface EditarInstanciaModalProps {
 }
 
 function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }: EditarInstanciaModalProps) {
+  const [fecha,      setFecha]      = useState('')   // YYYY-MM-DD
+  const [hora,       setHora]       = useState('')   // HH:MM
   const [zona,       setZona]       = useState<ZonaClase>('BAJA')
-  const [cupoMaximo, setCupoMaximo] = useState(6)
-  const [precio,     setPrecio]     = useState(0)
   const [profesorId, setProfesorId] = useState(0)
   const [motivo,     setMotivo]     = useState('')
   const [loading,    setLoading]    = useState(false)
@@ -405,9 +361,11 @@ function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }:
 
   useEffect(() => {
     if (open && instancia) {
+      const d = new Date(instancia.fecha)
+      // Separamos en fecha local y hora UTC (el backend guarda en UTC)
+      setFecha(d.toISOString().slice(0, 10))
+      setHora(`${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`)
       setZona(instancia.zona)
-      setCupoMaximo(instancia.cupoMaximo)
-      setPrecio(instancia.precio)
       setProfesorId(instancia.profesor?.id ?? 0)
       setMotivo('')
       setError('')
@@ -421,8 +379,13 @@ function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }:
     setLoading(true)
     setError('')
     try {
+      // Recombinamos fecha+hora en ISO UTC para enviar al backend
+      const fechaIso = `${fecha}T${hora}:00.000Z`
       const updated = await clasesApi.editarInstancia(instancia.id, {
-        zona, cupoMaximo, precio, profesorId, motivoExcepcion: motivo,
+        fecha: fechaIso,
+        zona,
+        profesorId,
+        motivoExcepcion: motivo,
       })
       onSaved(updated)
       onClose()
@@ -434,17 +397,17 @@ function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }:
   }
 
   if (!instancia) return null
-  const fecha = new Date(instancia.fecha)
+  const fechaOriginal = new Date(instancia.fecha)
 
   return (
     <Modal open={open} onClose={onClose} title="Editar clase específica" maxWidth="sm">
-      {/* Info de la clase */}
+      {/* Info original */}
       <div className="mb-4 pb-4 border-b border-surface-border">
+        <p className="text-xs text-text-secondary">Clase original:</p>
         <p className="text-sm font-semibold text-text-primary capitalize">
-          {fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        </p>
-        <p className="text-xs text-text-secondary mt-0.5">
-          {fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+          {fechaOriginal.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+          {' · '}
+          {fechaOriginal.getUTCHours().toString().padStart(2,'0')}:{fechaOriginal.getUTCMinutes().toString().padStart(2,'0')}
         </p>
         {instancia.esExcepcion && (
           <span className="inline-block mt-1 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
@@ -454,6 +417,14 @@ function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }:
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Nueva fecha y hora */}
+        <div className="grid grid-cols-2 gap-3">
+          <Input id="ei-fecha" label="Nueva fecha" type="date"
+            value={fecha} onChange={e => setFecha(e.target.value)} required />
+          <Input id="ei-hora"  label="Nueva hora"  type="time"
+            value={hora}  onChange={e => setHora(e.target.value)}  required />
+        </div>
+
         {/* Zona */}
         <div className="flex flex-col gap-1">
           <label className="text-sm font-medium text-text-primary">Zona</label>
@@ -466,13 +437,6 @@ function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }:
             <option value="MEDIA">Media</option>
             <option value="BAJA">Baja</option>
           </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Input id="ei-cupo"   label="Cupo"      type="number" min={1} value={cupoMaximo}
-            onChange={e => setCupoMaximo(Number(e.target.value))} required />
-          <Input id="ei-precio" label="Precio ($)" type="number" min={0} value={precio}
-            onChange={e => setPrecio(Number(e.target.value))} required />
         </div>
 
         {/* Profesor */}
@@ -496,7 +460,7 @@ function EditarInstanciaModal({ open, instancia, profesores, onClose, onSaved }:
           </label>
           <input
             type="text"
-            placeholder="Ej: Feriado, cambio de horario…"
+            placeholder="Ej: Feriado, cambio de horario, sala ocupada…"
             value={motivo}
             onChange={e => setMotivo(e.target.value)}
             className="w-full rounded-lg bg-surface-muted text-text-primary border border-transparent outline-none focus:border-brand-green px-3 py-2.5 text-sm"
@@ -568,6 +532,79 @@ function DeletePatronModal({ open, patron, agendaId, onClose, onDeleted }: Delet
           </Button>
           <Button variant="danger" onClick={handleDelete} loading={loading} fullWidth>
             Eliminar
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// ─── Modal — Cancelar instancia ──────────────────────────────────────────────
+
+interface CancelarInstanciaModalProps {
+  open: boolean
+  instancia: ClaseInstancia | null
+  onClose: () => void
+  onCancelled: (id: number) => void
+}
+
+function CancelarInstanciaModal({ open, instancia, onClose, onCancelled }: CancelarInstanciaModalProps) {
+  const [loading, setLoading] = useState(false)
+  const [error,   setError]   = useState('')
+
+  useEffect(() => { if (open) setError('') }, [open])
+
+  async function handleCancelar() {
+    if (!instancia) return
+    setLoading(true)
+    setError('')
+    try {
+      await clasesApi.cancelarInstancia(instancia.id)
+      onCancelled(instancia.id)
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cancelar')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fecha = instancia ? new Date(instancia.fecha) : null
+
+  return (
+    <Modal open={open} onClose={onClose} title="Cancelar clase" maxWidth="sm">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <div className="flex-shrink-0 w-10 h-10 rounded-full bg-status-cancelada/10 flex items-center justify-center">
+            <ExclamationTriangleIcon className="w-5 h-5 text-status-cancelada" />
+          </div>
+          <div className="pt-1">
+            {fecha && (
+              <p className="text-sm font-semibold text-text-primary capitalize mb-0.5">
+                {fecha.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                {' · '}
+                {fecha.getUTCHours().toString().padStart(2,'0')}:{fecha.getUTCMinutes().toString().padStart(2,'0')}hs
+              </p>
+            )}
+            <p className="text-sm text-text-secondary">
+              Se cancelará esta clase y se notificará a todos los clientes con reserva activa.
+              Las reservas quedarán canceladas automáticamente.
+            </p>
+          </div>
+        </div>
+
+        {error && (
+          <p className="text-sm text-status-cancelada bg-status-cancelada/10 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        <div className="flex gap-3">
+          <Button variant="secondary" onClick={onClose} type="button" fullWidth>
+            Volver
+          </Button>
+          <Button variant="danger" onClick={handleCancelar} loading={loading} fullWidth>
+            Cancelar clase
           </Button>
         </div>
       </div>
@@ -652,6 +689,7 @@ export function ClasesPage() {
   const [expandedPatronId,   setExpandedPatronId]   = useState<number | null>(null)
   const [instanciasLoaded,   setInstanciasLoaded]   = useState(false)
   const [editingInstancia,   setEditingInstancia]   = useState<ClaseInstancia | null>(null)
+  const [cancelingInstancia, setCancelingInstancia] = useState<ClaseInstancia | null>(null)
 
   // Profesor lookup map
   const profesorMap = useMemo(
@@ -771,6 +809,12 @@ export function ClasesPage() {
 
   function handleInstanciaSaved(updated: ClaseInstancia) {
     setInstancias(prev => prev.map(i => i.id === updated.id ? updated : i))
+  }
+
+  function handleInstanciaCancelled(id: number) {
+    setInstancias(prev => prev.map(i =>
+      i.id === id ? { ...i, esExcepcion: true, motivoExcepcion: 'CANCELADA', cancelada: true } : i
+    ))
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -971,37 +1015,67 @@ export function ClasesPage() {
                                           </p>
                                           {instanciasDelPatron.map(inst => {
                                             const fd = new Date(inst.fecha)
+                                            const horaInst    = `${fd.getUTCHours().toString().padStart(2,'0')}:${fd.getUTCMinutes().toString().padStart(2,'0')}`
+                                            const patronHora  = formatHoraUtc(p.hora)
+                                            const horaChanged = inst.esExcepcion && horaInst !== patronHora
+                                            const zonaChanged = inst.esExcepcion && inst.zona !== p.zona
+                                            const cancelada   = inst.motivoExcepcion === 'CANCELADA'
+
                                             return (
                                               <div
                                                 key={inst.id}
-                                                className="flex items-center justify-between gap-4 py-1.5 px-3 rounded-xl hover:bg-surface transition-colors"
+                                                className={`flex items-center justify-between gap-4 py-1.5 px-3 rounded-xl transition-colors ${cancelada ? 'opacity-50' : 'hover:bg-surface'}`}
                                               >
-                                                <div className="flex items-center gap-3 min-w-0">
-                                                  <span className="text-sm text-text-primary capitalize">
+                                                <div className="flex items-center gap-3 min-w-0 flex-wrap">
+                                                  {/* Fecha */}
+                                                  <span className={`text-sm capitalize ${cancelada ? 'line-through text-text-secondary' : 'text-text-primary'}`}>
                                                     {fd.toLocaleDateString('es-AR', { weekday: 'short', day: 'numeric', month: 'short' })}
                                                   </span>
-                                                  {inst.esExcepcion && inst.motivoExcepcion !== 'CANCELADA' && (
-                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 font-medium">
-                                                      Excepción
+
+                                                  {/* Hora — resaltada si cambió */}
+                                                  {horaChanged ? (
+                                                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-full">
+                                                      {horaInst}hs
+                                                      <span className="ml-1 font-normal text-text-secondary line-through">{patronHora}hs</span>
                                                     </span>
+                                                  ) : (
+                                                    <span className="text-xs text-text-secondary">{horaInst}hs</span>
                                                   )}
-                                                  {inst.motivoExcepcion === 'CANCELADA' && (
+
+                                                  {/* Zona si cambió */}
+                                                  {zonaChanged && <ZonaBadge zona={inst.zona} />}
+
+                                                  {/* Badges estado */}
+                                                  {cancelada && (
                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 border border-red-200 font-medium">
                                                       Cancelada
                                                     </span>
                                                   )}
-                                                  {inst.esExcepcion && inst.zona !== p.zona && (
-                                                    <ZonaBadge zona={inst.zona} />
+                                                  {inst.esExcepcion && !cancelada && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200 font-medium"
+                                                      title={inst.motivoExcepcion ?? ''}>
+                                                      Excepción
+                                                    </span>
                                                   )}
                                                 </div>
-                                                {isAdmin && inst.motivoExcepcion !== 'CANCELADA' && (
-                                                  <button
-                                                    onClick={() => setEditingInstancia(inst)}
-                                                    className="flex-shrink-0 p-1.5 rounded-lg text-text-secondary hover:text-brand-green-dark hover:bg-brand-green-dark/10 transition-colors"
-                                                    title="Editar solo esta clase"
-                                                  >
-                                                    <PencilSquareIcon className="w-3.5 h-3.5" />
-                                                  </button>
+
+                                                {isAdmin && !cancelada && (
+                                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                                    <button
+                                                      onClick={() => setEditingInstancia(inst)}
+                                                      className="p-1.5 rounded-lg text-text-secondary hover:text-brand-green-dark hover:bg-brand-green-dark/10 transition-colors"
+                                                      title="Editar solo esta clase"
+                                                    >
+                                                      <PencilSquareIcon className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                      onClick={() => setCancelingInstancia(inst)}
+                                                      className="p-1.5 rounded-lg text-text-secondary hover:text-status-cancelada hover:bg-status-cancelada/10 transition-colors"
+                                                      title="Cancelar esta clase"
+                                                    >
+                                                      <NoSymbolIcon className="w-3.5 h-3.5" />
+                                                    </button>
+                                                  </div>
                                                 )}
                                               </div>
                                             )
@@ -1185,6 +1259,13 @@ export function ClasesPage() {
         profesores={profesores}
         onClose={() => setEditingInstancia(null)}
         onSaved={handleInstanciaSaved}
+      />
+
+      <CancelarInstanciaModal
+        open={cancelingInstancia !== null}
+        instancia={cancelingInstancia}
+        onClose={() => setCancelingInstancia(null)}
+        onCancelled={handleInstanciaCancelled}
       />
     </motion.div>
   )

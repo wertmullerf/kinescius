@@ -36,18 +36,15 @@ export const clasesApi = {
     fecha: string
     zona: ZonaClase
     cupoMaximo: number
-    duracion: number
-    precio: number
     profesorId: number
   }) => post<ClaseInstancia>('/instancias/sueltas', data),
 
   eliminarSuelta: (id: number) => del<void>(`/instancias/sueltas/${id}`),
 
   editarInstancia: (id: number, data: {
+    fecha?: string
     zona?: ZonaClase
     profesorId?: number
-    cupoMaximo?: number
-    precio?: number
     motivoExcepcion: string
   }) => patch<ClaseInstancia>(`/instancias/${id}`, data),
 

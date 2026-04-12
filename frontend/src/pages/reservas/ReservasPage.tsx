@@ -29,6 +29,12 @@ import type {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Formatea la hora de una fecha UTC — los horarios de clases se guardan en UTC */
+function formatHoraUtc(fecha: Date | string): string {
+  const d = new Date(fecha)
+  return `${d.getUTCHours().toString().padStart(2, '0')}:${d.getUTCMinutes().toString().padStart(2, '0')}`
+}
+
 const ZONA_STYLES: Record<ZonaClase, { bg: string; color: string }> = {
   ALTA:  { bg: 'rgba(33,101,88,0.10)',  color: '#216558' },
   MEDIA: { bg: 'rgba(60,207,123,0.15)', color: '#1a7a4a' },
@@ -237,9 +243,7 @@ function CancelModal({ reserva, onClose, onCancelled }: CancelModalProps) {
                 weekday: 'long', day: 'numeric', month: 'long',
               })}
               {' · '}
-              {new Date(instancia.fecha).toLocaleTimeString('es-AR', {
-                hour: '2-digit', minute: '2-digit',
-              })}
+              {formatHoraUtc(instancia.fecha)}
             </p>
             <p className="text-text-secondary mt-0.5">Zona {instancia.zona}</p>
           </div>
@@ -378,9 +382,7 @@ function CambiarModal({ reserva, allAgendas, onClose, onChanged }: CambiarModalP
                 ].join(' ')}
               >
                 <p className="text-sm font-medium text-text-primary">
-                  {new Date(op.fecha).toLocaleTimeString('es-AR', {
-                    hour: '2-digit', minute: '2-digit',
-                  })}
+                  {formatHoraUtc(op.fecha)}
                   {' · '}{op.duracion} min
                 </p>
                 <p className="text-xs text-text-secondary mt-0.5">
@@ -743,18 +745,38 @@ function ExplorarTab({ reservas, onReservaCreated }: ExplorarTabProps) {
                           })}
                         </p>
                         <p className="text-xs text-text-secondary mt-0.5">
-                          {fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                          {formatHoraUtc(fecha)}
                           {' · '}{inst.duracion} min
                         </p>
                       </div>
                       <ZonaBadge zona={inst.zona} />
                     </div>
 
-                    <p className="text-xs text-text-secondary">
-                      {inst.profesor
-                        ? `${inst.profesor.nombre} ${inst.profesor.apellido}`
-                        : '—'}
-                    </p>
+                    {/* Profesor: avatar + nombre */}
+                    <div className="flex items-center gap-2">
+                      {inst.profesor ? (
+                        <>
+                          {inst.profesor.imagenUrl ? (
+                            <img
+                              src={inst.profesor.imagenUrl}
+                              alt={`${inst.profesor.nombre} ${inst.profesor.apellido}`}
+                              className="w-7 h-7 rounded-full object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-7 h-7 rounded-full bg-brand-green-dark/10 flex items-center justify-center flex-shrink-0">
+                              <span className="text-[10px] font-semibold text-brand-green-dark">
+                                {inst.profesor.nombre[0]}{inst.profesor.apellido[0]}
+                              </span>
+                            </div>
+                          )}
+                          <span className="text-xs text-text-secondary">
+                            {inst.profesor.nombre} {inst.profesor.apellido}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-text-secondary">—</span>
+                      )}
+                    </div>
 
                     <div className="flex items-center justify-between">
                       {completo ? (
@@ -850,7 +872,7 @@ function ColaCard({
                 })}
               </p>
               <p className="text-xs text-text-secondary mt-0.5">
-                {new Date(inst.fecha).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                {formatHoraUtc(inst.fecha)}
                 {' · '}{inst.duracion} min
                 {inst.profesor && ` · ${inst.profesor.nombre} ${inst.profesor.apellido}`}
               </p>
@@ -990,9 +1012,7 @@ function MisReservasTab({
                   })}
                 </p>
                 <p className="text-xs text-text-secondary mt-0.5">
-                  {new Date(inst.fecha).toLocaleTimeString('es-AR', {
-                    hour: '2-digit', minute: '2-digit',
-                  })}
+                  {formatHoraUtc(inst.fecha)}
                   {' · '}{inst.duracion} min
                   {' · '}Zona {inst.zona}
                 </p>

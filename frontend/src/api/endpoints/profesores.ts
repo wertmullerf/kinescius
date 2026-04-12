@@ -1,4 +1,4 @@
-import { get, post, put, del } from '@/api/client'
+import { get, post, put, del, postFile } from '@/api/client'
 import type { Profesor } from '@/types'
 
 export const profesoresApi = {
@@ -11,6 +11,12 @@ export const profesoresApi = {
 
   editar: (id: number, data: Partial<{ nombre: string; apellido: string; dni: string }>) =>
     put<Profesor>(`/profesores/${id}`, data),
+
+  subirImagen: (id: number, file: File) => {
+    const fd = new FormData()
+    fd.append('imagen', file)
+    return postFile<Profesor>(`/profesores/${id}/imagen`, fd)
+  },
 
   eliminar: (id: number) => del<void>(`/profesores/${id}`),
 }
