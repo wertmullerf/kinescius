@@ -66,7 +66,13 @@ export const claseController = {
 
   async editarInstancia(req: Request, res: Response, next: NextFunction) {
     try {
-      const data = await claseService.editarInstancia(Number(req.params.id), req.body);
+      const { fecha, zona, profesorId, motivoExcepcion } = req.body;
+      const data = await claseService.editarInstancia(Number(req.params.id), {
+        ...(fecha           && { fecha: new Date(fecha) }),
+        ...(zona            && { zona }),
+        ...(profesorId      && { profesorId: Number(profesorId) }),
+        motivoExcepcion,
+      });
       ok(res, data, "Instancia actualizada como excepción");
     } catch (err) {
       next(err);

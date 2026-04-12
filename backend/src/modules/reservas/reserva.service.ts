@@ -317,7 +317,7 @@ export const reservaService = {
       },
       include: {
         instancia: {
-          include: { profesor: { select: { id: true, nombre: true, apellido: true } } },
+          include: { profesor: { select: { id: true, nombre: true, apellido: true, imagenUrl: true } } },
         },
         pagos:   { include: { logs: true } },
         cliente: { select: { id: true, nombre: true, apellido: true, email: true } },
@@ -333,7 +333,7 @@ export const reservaService = {
       where: { id },
       include: {
         instancia: {
-          include: { profesor: { select: { id: true, nombre: true, apellido: true } } },
+          include: { profesor: { select: { id: true, nombre: true, apellido: true, imagenUrl: true } } },
         },
         pagos:     { include: { logs: true } },
         cliente:   { select: { id: true, nombre: true, apellido: true, email: true } },

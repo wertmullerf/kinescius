@@ -1,4 +1,5 @@
 import { prisma } from "../../db/prisma";
+import { subirImagenCloudinary } from "../../utils/cloudinary";
 
 interface ProfesorInput {
   nombre: string;
@@ -53,6 +54,15 @@ export const profesorService = {
     }
 
     return prisma.profesor.update({ where: { id }, data });
+  },
+
+  async subirImagen(id: number, buffer: Buffer) {
+    await this.obtener(id); // lanza si no existe
+    const url = await subirImagenCloudinary(buffer, `profesor_${id}`);
+    return prisma.profesor.update({
+      where: { id },
+      data:  { imagenUrl: url },
+    });
   },
 
   async eliminar(id: number) {

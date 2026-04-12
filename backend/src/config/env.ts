@@ -34,4 +34,9 @@ export const env = {
     pass: process.env.MAIL_PASS || "",  // contraseña de aplicación de Gmail (16 caracteres)
     from: process.env.MAIL_FROM || "",  // ej: "Kinescius <kinescius@gmail.com>"
   },
+  cloudinary: {
+    cloudName:  required("CLOUDINARY_CLOUD_NAME"),
+    apiKey:     required("CLOUDINARY_API_KEY"),
+    apiSecret:  required("CLOUDINARY_API_SECRET"),
+  },
 };

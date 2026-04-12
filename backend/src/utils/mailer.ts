@@ -207,6 +207,54 @@ export async function mailAbonoConfirmado(
   );
 }
 
+export async function mailClaseModificada(
+  cliente:   { nombre: string; email: string },
+  instancia: { fechaAnterior: Date; fechaNueva: Date; zona: string; motivo: string }
+) {
+  await send(
+    cliente.email,
+    "Tu clase fue reprogramada — Kinescius",
+    layout(
+      "Tu clase tiene un nuevo horario",
+      `<p>Hola <strong>${cliente.nombre}</strong>,</p>
+       <p>Una clase en la que tenés una reserva fue reprogramada:</p>
+       <div style="background:${GRIS_SUAVE};padding:16px 20px;border-radius:8px;margin:20px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:#757575;text-transform:uppercase;letter-spacing:1px">Horario anterior</p>
+         <p style="margin:0 0 12px;font-size:15px;color:${GRIS_TEXTO};text-decoration:line-through">${formatFecha(instancia.fechaAnterior)}</p>
+         <p style="margin:0 0 4px;font-size:13px;color:${VERDE};font-weight:600;text-transform:uppercase;letter-spacing:1px">Nuevo horario</p>
+         <p style="margin:0 0 8px;font-size:17px;font-weight:700;color:${VERDE}">${formatFecha(instancia.fechaNueva)}</p>
+         <p style="margin:0;font-size:13px;color:#757575">Zona: <strong>${instancia.zona}</strong> · Motivo: ${instancia.motivo}</p>
+       </div>
+       <p style="background:#fff8e1;border-left:4px solid #ffc107;padding:12px 16px;border-radius:0 8px 8px 0;font-size:14px;color:#5d4037;margin:0">
+         Si el nuevo horario no te sirve, podés cancelar tu reserva desde la app.
+         Recordá las políticas de cancelación vigentes.
+       </p>`
+    )
+  );
+}
+
+export async function mailInstanciaCancelada(
+  cliente:   { nombre: string; email: string },
+  instancia: { fecha: Date; zona: string }
+) {
+  await send(
+    cliente.email,
+    "Clase cancelada — Kinescius",
+    layout(
+      "Una clase fue cancelada",
+      `<p>Hola <strong>${cliente.nombre}</strong>,</p>
+       <p>Lamentablemente la siguiente clase fue <strong>cancelada</strong> por el centro:</p>
+       <div style="background:#fbe9e7;border-left:4px solid #e64a19;padding:16px 20px;border-radius:0 8px 8px 0;margin:20px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:#e64a19;font-weight:600;text-transform:uppercase;letter-spacing:1px">Zona</p>
+         <p style="margin:0 0 10px;font-size:18px;font-weight:700;color:#bf360c">${instancia.zona}</p>
+         <p style="margin:0 0 4px;font-size:13px;color:#e64a19;font-weight:600;text-transform:uppercase;letter-spacing:1px">Fecha y hora</p>
+         <p style="margin:0;font-size:15px;color:#bf360c">${formatFecha(instancia.fecha)}</p>
+       </div>
+       <p style="color:#616161;font-size:14px">Tu reserva fue cancelada automáticamente. Si habías realizado un pago, el equipo del centro se comunicará para coordinar el reembolso.</p>`
+    )
+  );
+}
+
 export async function mailRestablecerContrasenia(
   cliente: { nombre: string; email: string },
   resetLink: string

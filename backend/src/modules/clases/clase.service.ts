@@ -1,6 +1,19 @@
 import { prisma } from "../../db/prisma";
 import { ZonaClase } from "../../types/models";
 import { parseHora, formatHora, generarFechasDelMes } from "../../utils/clases";
+import { configuracionService } from "../configuracion/configuracion.service";
+import { mailClaseModificada, mailInstanciaCancelada } from "../../utils/mailer";
+
+async function getConfigClase(): Promise<{ precio: number; duracion: number }> {
+  const [precioStr, minutosStr] = await Promise.all([
+    configuracionService.obtener("precioClase"),
+    configuracionService.obtener("minutosClase"),
+  ]);
+  return {
+    precio:   Number(precioStr)  || 2000,
+    duracion: Number(minutosStr) || 60,
+  };
+}
 
 // ─── Includes reutilizados ────────────────────────────────────────────────────
 
@@ -10,7 +23,7 @@ const includePatron = {
 } as const;
 
 const includeInstancia = {
-  profesor: { select: { id: true, nombre: true, apellido: true } },
+  profesor: { select: { id: true, nombre: true, apellido: true, imagenUrl: true } },
   _count: { select: { reservas: true } },
 } as const;
 
@@ -64,7 +77,6 @@ export const claseService = {
       hora: string;
       zona: ZonaClase;
       cupoMaximo: number;
-      precio: number;
       profesorId: number;
     }
   ) {
@@ -73,6 +85,8 @@ export const claseService = {
 
     const profesor = await prisma.profesor.findUnique({ where: { id: data.profesorId } });
     if (!profesor) throw new Error("Profesor no encontrado");
+
+    const { precio, duracion } = await getConfigClase();
 
     const horaDate = parseHora(data.hora);
     const fechas = generarFechasDelMes(agenda.anio, agenda.mes, data.diaSemana, horaDate);
@@ -89,8 +103,8 @@ export const claseService = {
           hora:       horaDate,
           zona:       data.zona,
           cupoMaximo: data.cupoMaximo,
-          duracion:   60,
-          precio:     data.precio,
+          duracion,
+          precio,
           profesorId: data.profesorId,
           agendaId,
         },
@@ -126,7 +140,6 @@ export const claseService = {
       hora?:       string;
       zona?:       ZonaClase;
       cupoMaximo?: number;
-      precio?:     number;
       profesorId?: number;
     }
   ) {
@@ -152,6 +165,7 @@ export const claseService = {
         );
       }
 
+      const { precio, duracion } = await getConfigClase();
       const agenda      = await prisma.agendaMensual.findUnique({ where: { id: agendaId } });
       const nuevoDia    = data.diaSemana  ?? patron.diaSemana;
       const nuevaHora   = data.hora       ? parseHora(data.hora) : patron.hora;
@@ -173,8 +187,9 @@ export const claseService = {
             ...(data.hora       !== undefined && { hora:       nuevaHora }),
             ...(data.zona       !== undefined && { zona:       data.zona }),
             ...(data.cupoMaximo !== undefined && { cupoMaximo: data.cupoMaximo }),
-            ...(data.precio     !== undefined && { precio:     data.precio }),
             ...(data.profesorId !== undefined && { profesorId: data.profesorId }),
+            precio,
+            duracion,
           },
         });
 
@@ -184,8 +199,8 @@ export const claseService = {
               fecha,
               zona:         patronActualizado.zona,
               cupoMaximo:   patronActualizado.cupoMaximo,
-              duracion:     patronActualizado.duracion,
-              precio:       patronActualizado.precio,
+              duracion,
+              precio,
               profesorId:   patronActualizado.profesorId,
               recurrenteId: id,
               esExcepcion:  false,
@@ -208,14 +223,17 @@ export const claseService = {
         }
       }
 
+      const { precio, duracion } = await getConfigClase();
+
       await prisma.$transaction(async (tx) => {
         await tx.claseRecurrente.update({
           where: { id },
           data: {
             ...(data.zona       !== undefined && { zona:       data.zona }),
             ...(data.cupoMaximo !== undefined && { cupoMaximo: data.cupoMaximo }),
-            ...(data.precio     !== undefined && { precio:     data.precio }),
             ...(data.profesorId !== undefined && { profesorId: data.profesorId }),
+            precio,
+            duracion,
           },
         });
 
@@ -225,8 +243,9 @@ export const claseService = {
           data: {
             ...(data.zona       !== undefined && { zona:       data.zona }),
             ...(data.cupoMaximo !== undefined && { cupoMaximo: data.cupoMaximo }),
-            ...(data.precio     !== undefined && { precio:     data.precio }),
             ...(data.profesorId !== undefined && { profesorId: data.profesorId }),
+            precio,
+            duracion,
           },
         });
       });
@@ -281,7 +300,7 @@ export const claseService = {
         ...(filters?.zona && { zona: filters.zona }),
       },
       include: {
-        profesor: { select: { id: true, nombre: true, apellido: true } },
+        profesor: { select: { id: true, nombre: true, apellido: true, imagenUrl: true } },
         _count: {
           select: {
             reservas: {
@@ -296,15 +315,15 @@ export const claseService = {
     return instancias.map(({ _count, ...rest }) => ({
       ...rest,
       reservasActivas: _count.reservas,
+      cancelada: rest.motivoExcepcion === "CANCELADA",
     }));
   },
 
   async editarInstancia(
     id: number,
     data: {
+      fecha?:           Date;
       zona?:            ZonaClase;
-      cupoMaximo?:      number;
-      precio?:          number;
       profesorId?:      number;
       motivoExcepcion:  string;
     }
@@ -312,41 +331,88 @@ export const claseService = {
     const instancia = await prisma.claseInstancia.findUnique({ where: { id } });
     if (!instancia) throw new Error("Instancia no encontrada");
 
-    if (data.profesorId !== undefined && data.profesorId !== instancia.profesorId) {
-      await checkConflictoProfesor(data.profesorId, [instancia.fecha], id);
+    // Si cambia fecha o profesor, verificar que no haya conflicto
+    const fechaFinal    = data.fecha      ?? instancia.fecha;
+    const profesorFinal = data.profesorId ?? instancia.profesorId;
+    if (data.fecha !== undefined || data.profesorId !== undefined) {
+      await checkConflictoProfesor(profesorFinal, [fechaFinal], id);
     }
 
-    return prisma.claseInstancia.update({
+    const { precio, duracion } = await getConfigClase();
+
+    const updated = await prisma.claseInstancia.update({
       where: { id },
       data: {
         esExcepcion:     true,
         motivoExcepcion: data.motivoExcepcion,
+        precio,
+        duracion,
+        ...(data.fecha      !== undefined && { fecha:      data.fecha }),
         ...(data.zona       !== undefined && { zona:       data.zona }),
-        ...(data.cupoMaximo !== undefined && { cupoMaximo: data.cupoMaximo }),
-        ...(data.precio     !== undefined && { precio:     data.precio }),
         ...(data.profesorId !== undefined && { profesorId: data.profesorId }),
       },
       include: includeInstancia,
     });
+
+    // Notificar a todos los clientes con reservas activas
+    const reservas = await prisma.reserva.findMany({
+      where: {
+        instanciaId: id,
+        estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
+      },
+      include: { cliente: { select: { nombre: true, email: true } } },
+    });
+    for (const r of reservas) {
+      mailClaseModificada(r.cliente, {
+        fechaAnterior: instancia.fecha,
+        fechaNueva:    updated.fecha,
+        zona:          updated.zona,
+        motivo:        data.motivoExcepcion,
+      }).catch(() => {});
+    }
+
+    return updated;
   },
 
   async cancelarInstancia(id: number) {
     const instancia = await prisma.claseInstancia.findUnique({
       where: { id },
-      include: { _count: { select: { reservas: true } } },
     });
     if (!instancia) throw new Error("Instancia no encontrada");
 
-    if (instancia._count.reservas > 0) {
-      throw new Error(
-        `No se puede cancelar la instancia porque tiene ${instancia._count.reservas} reserva(s) activa(s). Primero cancelá las reservas.`
-      );
+    // Obtener reservas activas con datos del cliente para notificar
+    const reservas = await prisma.reserva.findMany({
+      where: {
+        instanciaId: id,
+        estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
+      },
+      include: { cliente: { select: { nombre: true, email: true } } },
+    });
+
+    // Cancelar todas las reservas activas y marcar la instancia como cancelada
+    await prisma.$transaction([
+      prisma.reserva.updateMany({
+        where: {
+          instanciaId: id,
+          estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
+        },
+        data: { estado: "CANCELADA" },
+      }),
+      prisma.claseInstancia.update({
+        where: { id },
+        data: { esExcepcion: true, motivoExcepcion: "CANCELADA" },
+      }),
+    ]);
+
+    // Notificar a cada cliente (fire-and-forget)
+    for (const r of reservas) {
+      mailInstanciaCancelada(r.cliente, {
+        fecha: instancia.fecha,
+        zona:  instancia.zona,
+      }).catch(() => {});
     }
 
-    return prisma.claseInstancia.update({
-      where: { id },
-      data: { esExcepcion: true, motivoExcepcion: "CANCELADA" },
-    });
+    return { canceladas: reservas.length };
   },
 
   // ── Instancias sueltas ──────────────────────────────────────────────────────
@@ -355,11 +421,12 @@ export const claseService = {
     fecha:      string;
     zona:       ZonaClase;
     cupoMaximo: number;
-    precio:     number;
     profesorId: number;
   }) {
     const profesor = await prisma.profesor.findUnique({ where: { id: data.profesorId } });
     if (!profesor) throw new Error("Profesor no encontrado");
+
+    const { precio, duracion } = await getConfigClase();
 
     const fecha = new Date(data.fecha);
     await checkConflictoProfesor(data.profesorId, [fecha]);
@@ -369,8 +436,8 @@ export const claseService = {
         fecha,
         zona:         data.zona,
         cupoMaximo:   data.cupoMaximo,
-        duracion:     60,
-        precio:       data.precio,
+        duracion,
+        precio,
         profesorId:   data.profesorId,
         recurrenteId: null,
         esExcepcion:  false,

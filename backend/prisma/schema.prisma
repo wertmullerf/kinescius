@@ -89,10 +89,11 @@ model Usuario {
 // ─────────────────────────────────────────
 
 model Profesor {
-  id       Int    @id @default(autoincrement())
-  nombre   String
-  apellido String
-  dni      String @unique
+  id        Int     @id @default(autoincrement())
+  nombre    String
+  apellido  String
+  dni       String  @unique
+  imagenUrl String? // URL de Cloudinary (webp 400×400)
 
   clasesRecurrentes ClaseRecurrente[]
   claseInstancias   ClaseInstancia[]

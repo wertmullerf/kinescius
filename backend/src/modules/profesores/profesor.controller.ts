@@ -39,6 +39,19 @@ export const profesorController = {
     }
   },
 
+  async subirImagen(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.file) {
+        res.status(400).json({ success: false, message: "No se recibió ningún archivo" });
+        return;
+      }
+      const data = await profesorService.subirImagen(Number(req.params.id), req.file.buffer);
+      ok(res, data, "Imagen actualizada correctamente");
+    } catch (err) {
+      next(err);
+    }
+  },
+
   async eliminar(req: Request, res: Response, next: NextFunction) {
     try {
       await profesorService.eliminar(Number(req.params.id));
