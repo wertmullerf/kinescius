@@ -1,19 +1,35 @@
 import { useState, useEffect, useRef } from 'react'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   CurrencyDollarIcon,
   ExclamationTriangleIcon,
   CheckBadgeIcon,
   ArrowTopRightOnSquareIcon,
+  BanknotesIcon,
+  ArrowDownTrayIcon,
+  ClockIcon,
+  CreditCardIcon,
 } from '@heroicons/react/24/outline'
 import { pagosApi } from '@/api/endpoints/pagos'
 import { configApi } from '@/api/endpoints/config'
+import { usuariosApi } from '@/api/endpoints/usuarios'
 import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
 import { Toast } from '@/components/ui/Toast'
+import { CardPaymentForm } from '@/components/ui/CardPaymentForm'
 import { fadeInUp } from '@/utils/animations'
 import { formatCurrency } from '@/utils/formatters'
 import { useAuth } from '@/hooks/useAuth'
 import { usePaymentStatus } from '@/hooks/usePaymentStatus'
+import type { MovimientoSaldo, CardData } from '@/types'
+
+const LABELS_MOVIMIENTO: Record<MovimientoSaldo['tipo'], string> = {
+  ACREDITADO_CANCELACION_CLASE:    'Clase cancelada',
+  ACREDITADO_CANCELACION_RESERVA:  'Cancelación con anticipación',
+  UTILIZADO_RESERVA:               'Usado en reserva',
+  REVERTIDO_RECHAZO_PAGO:         'Pago rechazado — devuelto',
+  RECLAMADO:                       'Saldo reclamado',
+}
 
 const PRESETS = [3, 5, 10, 20]
 
@@ -27,12 +43,24 @@ export function AbonosPage() {
   const { user, refreshUser } = useAuth()
   const { paymentStatus, clearPaymentStatus } = usePaymentStatus()
 
-  const [cantidad,    setCantidad]    = useState(5)
-  const [precioClase, setPrecioClase] = useState<number | null>(null)
-  const [loading,     setLoading]     = useState(false)
-  const [error,       setError]       = useState('')
-  const [initPoint,   setInitPoint]   = useState<string | null>(null)
+  const [cantidad,       setCantidad]       = useState(5)
+  const [precioClase,    setPrecioClase]    = useState<number | null>(null)
+  const [loading,        setLoading]        = useState(false)
+  const [error,          setError]          = useState('')
+  const [initPoint,      setInitPoint]      = useState<string | null>(null)
+  const [showCardModal,  setShowCardModal]  = useState(false)
+  const [cardLoading,    setCardLoading]    = useState(false)
+  const [cardError,      setCardError]      = useState('')
+  const [cardSuccess,    setCardSuccess]    = useState(false)
   const paymentPending = useRef(false)
+
+  // Saldo a favor
+  const [saldo,           setSaldo]           = useState<number | null>(null)
+  const [movimientos,     setMovimientos]     = useState<MovimientoSaldo[]>([])
+  const [loadingSaldo,    setLoadingSaldo]    = useState(false)
+  const [reclamando,      setReclamando]      = useState(false)
+  const [montoReclamado,  setMontoReclamado]  = useState<number | null>(null)
+  const [errorSaldo,      setErrorSaldo]      = useState('')
 
   useEffect(() => {
     configApi.obtener().then(cfg => {
@@ -44,6 +72,33 @@ export function AbonosPage() {
 
   // Refrescar datos del usuario al montar la página
   useEffect(() => { refreshUser() }, [refreshUser])
+
+  // Cargar saldo a favor
+  useEffect(() => {
+    setLoadingSaldo(true)
+    usuariosApi.miSaldo()
+      .then(data => { setSaldo(data.saldoFavor); setMovimientos(data.movimientos) })
+      .catch(() => {})
+      .finally(() => setLoadingSaldo(false))
+  }, [])
+
+  async function handleReclamar() {
+    setReclamando(true)
+    setErrorSaldo('')
+    try {
+      const { monto } = await usuariosApi.reclamarSaldo()
+      setMontoReclamado(monto)
+      setSaldo(0)
+      setMovimientos(prev => [
+        { id: Date.now(), clienteId: user!.id, monto, tipo: 'RECLAMADO', descripcion: 'Saldo reclamado por el cliente', createdAt: new Date().toISOString() },
+        ...prev,
+      ])
+    } catch (err) {
+      setErrorSaldo(err instanceof Error ? err.message : 'Error al reclamar saldo')
+    } finally {
+      setReclamando(false)
+    }
+  }
 
   // Cuando el usuario vuelve a la pestaña después de pagar en MP, refrescamos
   // el usuario para ver si el webhook ya acreditó las clases
@@ -62,7 +117,7 @@ export function AbonosPage() {
   const montoBase   = precioClase !== null ? cantidad * precioClase : 0
   const montoFinal  = Math.round(montoBase * (1 - descuento))
 
-  async function handlePagar() {
+  async function handlePagarMp() {
     if (!precioClase || cantidad <= 0) return
     setLoading(true)
     setError('')
@@ -81,6 +136,31 @@ export function AbonosPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  async function handlePagarTarjeta(cardData: CardData) {
+    if (!precioClase || cantidad <= 0) return
+    setCardLoading(true)
+    setCardError('')
+    try {
+      await pagosApi.pagarAbonoTarjeta({
+        cantidadClases: cantidad,
+        precioPorClase: precioClase,
+        tarjeta: cardData,
+      })
+      setCardSuccess(true)
+      await refreshUser()
+    } catch (err) {
+      setCardError(err instanceof Error ? err.message : 'Error al procesar la tarjeta')
+    } finally {
+      setCardLoading(false)
+    }
+  }
+
+  function handleCloseCardModal() {
+    setShowCardModal(false)
+    setCardError('')
+    if (cardSuccess) setCardSuccess(false)
   }
 
   return (
@@ -208,21 +288,111 @@ export function AbonosPage() {
           </div>
         )}
 
-        <Button
-          onClick={handlePagar}
-          loading={loading}
-          disabled={precioClase === null || cantidad <= 0}
-          fullWidth
-          icon={<ArrowTopRightOnSquareIcon className="w-4 h-4" />}
-          iconPosition="right"
-        >
-          Pagar con Mercado Pago
-        </Button>
+        {/* Botones de pago */}
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            onClick={() => { setShowCardModal(true); setCardSuccess(false); setCardError('') }}
+            disabled={precioClase === null || cantidad <= 0}
+            fullWidth
+            icon={<CreditCardIcon className="w-4 h-4" />}
+            iconPosition="left"
+          >
+            Pagar con tarjeta
+          </Button>
+          <Button
+            onClick={handlePagarMp}
+            loading={loading}
+            disabled={precioClase === null || cantidad <= 0}
+            fullWidth
+            icon={<ArrowTopRightOnSquareIcon className="w-4 h-4" />}
+            iconPosition="right"
+          >
+            Mercado Pago
+          </Button>
+        </div>
 
         <p className="text-xs text-text-secondary text-center">
           Las clases se acreditarán automáticamente después de confirmar el pago.
         </p>
       </div>
+
+      {/* Saldo a favor */}
+      {!loadingSaldo && saldo !== null && (
+        <div className="mt-5 bg-surface rounded-3xl shadow-card border border-surface-border p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center flex-shrink-0">
+              <BanknotesIcon className="w-5 h-5 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-text-primary">Saldo a favor</p>
+              <p className="text-xs text-text-secondary">Crédito acumulado por cancelaciones</p>
+            </div>
+          </div>
+
+          <div className="flex items-end justify-between">
+            <div>
+              <p className="text-3xl font-bold text-orange-600">{formatCurrency(saldo)}</p>
+              <p className="text-xs text-text-secondary mt-0.5">disponible para usar en reservas</p>
+            </div>
+            {saldo > 0 && (
+              <Button
+                onClick={handleReclamar}
+                loading={reclamando}
+                icon={<ArrowDownTrayIcon className="w-4 h-4" />}
+                iconPosition="left"
+              >
+                Reclamar saldo
+              </Button>
+            )}
+          </div>
+
+          <AnimatePresence>
+            {montoReclamado !== null && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="flex items-start gap-2 bg-green-50 border border-green-200 rounded-xl px-3 py-2.5"
+              >
+                <CheckBadgeIcon className="w-4 h-4 text-green-600 flex-shrink-0 mt-0.5" />
+                <p className="text-sm text-green-700">
+                  Se procesó la devolución de <strong>{formatCurrency(montoReclamado)}</strong>.
+                  El equipo del centro coordinará el reintegro.
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {errorSaldo && (
+            <p className="text-sm text-status-cancelada">{errorSaldo}</p>
+          )}
+
+          {/* Historial de movimientos */}
+          {movimientos.length > 0 && (
+            <div className="space-y-1 pt-2">
+              <p className="text-xs font-medium text-text-secondary uppercase tracking-wider mb-2">Historial</p>
+              {movimientos.map(m => {
+                const esCredito = m.tipo !== 'UTILIZADO_RESERVA' && m.tipo !== 'RECLAMADO'
+                return (
+                  <div key={m.id} className="flex items-start justify-between gap-2 py-2 border-b border-surface-border last:border-0">
+                    <div className="flex items-start gap-2 min-w-0">
+                      <ClockIcon className="w-3.5 h-3.5 text-text-secondary flex-shrink-0 mt-0.5" />
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-text-primary truncate">{LABELS_MOVIMIENTO[m.tipo]}</p>
+                        <p className="text-xs text-text-secondary truncate">{m.descripcion}</p>
+                        <p className="text-xs text-text-secondary">{new Date(m.createdAt).toLocaleDateString('es-AR')}</p>
+                      </div>
+                    </div>
+                    <span className={`text-sm font-semibold flex-shrink-0 ${esCredito ? 'text-green-600' : 'text-status-cancelada'}`}>
+                      {esCredito ? '+' : '−'}{formatCurrency(m.monto)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {paymentStatus && (
         <Toast
@@ -231,6 +401,43 @@ export function AbonosPage() {
           onClose={clearPaymentStatus}
         />
       )}
+
+      {/* Modal de pago con tarjeta */}
+      <Modal
+        open={showCardModal}
+        onClose={handleCloseCardModal}
+        title="Pagar con tarjeta"
+        maxWidth="sm"
+      >
+        {cardSuccess ? (
+          <div className="text-center space-y-4 py-2">
+            <CheckBadgeIcon className="w-14 h-14 text-brand-green mx-auto" />
+            <div>
+              <p className="font-semibold text-text-primary text-lg">¡Pago confirmado!</p>
+              <p className="text-text-secondary text-sm mt-1">
+                Las clases ya están acreditadas en tu cuenta.
+              </p>
+            </div>
+            <Button onClick={handleCloseCardModal} fullWidth>
+              Cerrar
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Resumen del monto */}
+            <div className="bg-surface-muted rounded-xl px-4 py-3 flex justify-between items-center">
+              <span className="text-sm text-text-secondary">{cantidad} clases</span>
+              <span className="text-base font-bold text-text-primary">{formatCurrency(montoFinal)}</span>
+            </div>
+            <CardPaymentForm
+              onSubmit={handlePagarTarjeta}
+              loading={cardLoading}
+              error={cardError}
+              submitLabel={`Pagar ${formatCurrency(montoFinal)}`}
+            />
+          </div>
+        )}
+      </Modal>
     </motion.div>
   )
 }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { authenticateToken, authorizeRoles } from "../../middlewares/auth.middleware";
 import { validate } from "../../middlewares/validate.middleware";
 import { pagoController } from "./pago.controller";
-import { abonoPresencialSchema, abonoMpSchema, complementoSchema } from "./pago.validation";
+import { abonoPresencialSchema, abonoMpSchema, abonoTarjetaSchema, complementoSchema } from "./pago.validation";
 
 const router = Router();
 
@@ -29,6 +29,19 @@ router.post(
   authorizeRoles("ADMIN"),
   validate(abonoPresencialSchema),
   pagoController.cargarAbono
+);
+
+/**
+ * POST /api/pagos/abono/tarjeta
+ * Cliente paga un abono con tarjeta ficticia.
+ * Body: { cantidadClases, precioPorClase, tarjeta: { numero, cvv, fechaExpiracion, titular } }
+ */
+router.post(
+  "/abono/tarjeta",
+  authenticateToken,
+  authorizeRoles("CLIENTE"),
+  validate(abonoTarjetaSchema),
+  pagoController.pagarAbonoTarjeta
 );
 
 /**

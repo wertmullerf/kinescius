@@ -19,6 +19,28 @@ router.get(
 );
 
 /**
+ * GET /api/usuarios/mi-saldo
+ * Devuelve el saldo a favor y los últimos 20 movimientos del cliente autenticado.
+ */
+router.get(
+  "/mi-saldo",
+  authenticateToken,
+  authorizeRoles("CLIENTE"),
+  usuariosController.miSaldo
+);
+
+/**
+ * POST /api/usuarios/reclamar-saldo
+ * El cliente retira su saldo a favor (queda en 0 en DB).
+ */
+router.post(
+  "/reclamar-saldo",
+  authenticateToken,
+  authorizeRoles("CLIENTE"),
+  usuariosController.reclamarSaldo
+);
+
+/**
  * GET /api/usuarios/:id
  * Detalle de un cliente con sus últimas 20 reservas.
  */

@@ -1,20 +1,22 @@
 import { prisma } from "../../db/prisma";
 import { actualizarTipoCliente } from "../../utils/actualizarTipoCliente";
-import { crearPreferencia, reembolsarPago } from "../../utils/mercadopago";
+import { crearPreferencia } from "../../utils/mercadopago";
 import { colaService } from "../cola-espera/cola.service";
 import type { ZonaClase } from "../../types/models";
 import {
   mailReservaConfirmada,
   mailReservaCancelada,
-  mailReembolsoProcesado,
+  mailSaldoAcreditado,
 } from "../../utils/mailer";
+import type { TarjetaDto } from "../pagos/pago.validation";
+import { pagoService } from "../pagos/pago.service";
 
 export const reservaService = {
   // ─── CREAR RESERVA ────────────────────────────────────────────────
   // Punto de entrada único para crear una reserva.
   // Deriva al flujo de abonado o no abonado según el tipo de cliente.
 
-  async crear(clienteId: number, instanciaId: number) {
+  async crear(clienteId: number, instanciaId: number, tarjeta?: TarjetaDto) {
     const cliente   = await prisma.usuario.findUnique({ where: { id: clienteId } });
     if (!cliente)   throw new Error("Usuario no encontrado");
 
@@ -78,7 +80,12 @@ export const reservaService = {
     if (cliente.tipoCliente === "ABONADO") {
       return this._crearReservaAbonado(cliente, instancia, precioInstancia);
     } else {
-      return this._crearReservaNoAbonado(cliente, instancia, precioInstancia);
+      return this._crearReservaNoAbonado(
+        { ...cliente, saldoFavor: Number(cliente.saldoFavor) },
+        instancia,
+        precioInstancia,
+        tarjeta
+      );
     }
   },
 
@@ -126,41 +133,146 @@ export const reservaService = {
   },
 
   // ─── FLUJO NO ABONADO ─────────────────────────────────────────────
-  // Crea la reserva en PENDIENTE_PAGO y genera la preferencia de pago en MP.
-  // NO se crea ningún registro en la tabla pagos todavía.
-  // El Pago se crea recién cuando el webhook de MP confirma la aprobación.
+  // Crea la reserva y aplica saldoFavor si existe.
+  // Si el saldo cubre la seña completa: RESERVA_PAGA sin MP.
+  // Si cubre parcialmente: descuenta el saldo y genera MP por el resto.
+  // Si no hay saldo: flujo original con MP al 100%.
 
   async _crearReservaNoAbonado(
-    cliente: { id: number; nombre: string; email: string },
+    cliente: { id: number; nombre: string; email: string; saldoFavor: number },
     instancia: { id: number; fecha: Date; zona: ZonaClase },
-    precioInstancia: number
+    precioInstancia: number,
+    tarjeta?: TarjetaDto
   ) {
-    // La seña es el 50% del precio
-    const monto = Math.round(precioInstancia * 0.5);
+    const senaMonto        = Math.round(precioInstancia * 0.5);
+    const saldoAUsar       = Math.min(cliente.saldoFavor, senaMonto);
+    const montoRestante    = senaMonto - saldoAUsar;
+    const cubiertoPorSaldo = saldoAUsar >= senaMonto;
 
+    // ── Cobertura total por saldo: sin MP ni tarjeta ───────────────
+    if (cubiertoPorSaldo) {
+      const [reserva] = await prisma.$transaction([
+        prisma.reserva.create({
+          data: {
+            clienteId:      cliente.id,
+            instanciaId:    instancia.id,
+            estado:         "RESERVA_PAGA",
+            montoPagado:    saldoAUsar,
+            saldoUtilizado: saldoAUsar,
+          },
+        }),
+        prisma.usuario.update({
+          where: { id: cliente.id },
+          data:  { saldoFavor: { decrement: saldoAUsar } },
+        }),
+      ]);
+      await prisma.movimientoSaldo.create({
+        data: {
+          clienteId:   cliente.id,
+          monto:       saldoAUsar,
+          tipo:        "UTILIZADO_RESERVA",
+          descripcion: `Seña cubierta con saldo: ${instancia.zona} · ${instancia.fecha.toLocaleDateString("es-AR")}`,
+          reservaId:   reserva.id,
+        },
+      });
+      await mailReservaConfirmada(
+        { nombre: cliente.nombre, email: cliente.email },
+        { fecha: instancia.fecha, zona: instancia.zona }
+      );
+      return { reserva, initPoint: "", sinCupo: false };
+    }
+
+    // ── Pago con tarjeta (monto restante tras aplicar saldo) ──────────
+    if (tarjeta) {
+      const ultimos4 = await pagoService._validarTarjeta(tarjeta);
+
+      const reserva = await prisma.$transaction(async (tx) => {
+        const r = await tx.reserva.create({
+          data: {
+            clienteId:      cliente.id,
+            instanciaId:    instancia.id,
+            estado:         "RESERVA_PAGA",
+            montoPagado:    senaMonto,
+            saldoUtilizado: saldoAUsar,
+          },
+        });
+
+        await tx.pago.create({
+          data: {
+            reservaId:       r.id,
+            monto:           montoRestante > 0 ? montoRestante : senaMonto,
+            metodo:          "TARJETA",
+            tipo:            "SENA",
+            tarjetaUltimos4: ultimos4,
+          },
+        });
+
+        if (saldoAUsar > 0) {
+          await tx.usuario.update({
+            where: { id: cliente.id },
+            data:  { saldoFavor: { decrement: saldoAUsar } },
+          });
+          await tx.movimientoSaldo.create({
+            data: {
+              clienteId:   cliente.id,
+              monto:       saldoAUsar,
+              tipo:        "UTILIZADO_RESERVA",
+              descripcion: `Saldo aplicado a reserva: ${instancia.zona} · ${instancia.fecha.toLocaleDateString("es-AR")}`,
+              reservaId:   r.id,
+            },
+          });
+        }
+
+        return r;
+      });
+
+      await mailReservaConfirmada(
+        { nombre: cliente.nombre, email: cliente.email },
+        { fecha: instancia.fecha, zona: instancia.zona }
+      );
+
+      return { reserva, initPoint: "", sinCupo: false };
+    }
+
+    // ── Sin saldo o cobertura parcial: reserva + MP ────────────────
     const reserva = await prisma.reserva.create({
       data: {
-        clienteId:   cliente.id,
-        instanciaId: instancia.id,
-        estado:      "PENDIENTE_PAGO",
-        montoPagado: 0,
+        clienteId:      cliente.id,
+        instanciaId:    instancia.id,
+        estado:         "PENDIENTE_PAGO",
+        montoPagado:    saldoAUsar,   // pre-cargado con la parte del saldo
+        saldoUtilizado: saldoAUsar,
       },
     });
 
-    // Generar preferencia de pago en MP
+    // Descontar saldo y registrar movimiento (si hay algo)
+    if (saldoAUsar > 0) {
+      await prisma.$transaction([
+        prisma.usuario.update({
+          where: { id: cliente.id },
+          data:  { saldoFavor: { decrement: saldoAUsar } },
+        }),
+        prisma.movimientoSaldo.create({
+          data: {
+            clienteId:   cliente.id,
+            monto:       saldoAUsar,
+            tipo:        "UTILIZADO_RESERVA",
+            descripcion: `Saldo aplicado a reserva: ${instancia.zona} · ${instancia.fecha.toLocaleDateString("es-AR")}`,
+            reservaId:   reserva.id,
+          },
+        }),
+      ]);
+    }
+
+    // Generar preferencia MP por el monto restante
     let initPoint = "";
     let mpPrefId  = "";
     try {
+      const titulo = saldoAUsar > 0
+        ? `Seña - Clase ${instancia.zona} ${instancia.fecha.toLocaleDateString("es-AR")} (saldo aplicado: $${saldoAUsar})`
+        : `Seña - Clase ${instancia.zona} ${instancia.fecha.toLocaleDateString("es-AR")}`;
       const pref = await crearPreferencia({
-        items: [
-          {
-            id:          `sena-${reserva.id}`,
-            title:       `Seña - Clase ${instancia.zona} ${instancia.fecha.toLocaleDateString("es-AR")}`,
-            unit_price:  monto,
-            quantity:    1,
-            currency_id: "ARS",
-          },
-        ],
+        items: [{ id: `sena-${reserva.id}`, title: titulo, unit_price: montoRestante, quantity: 1, currency_id: "ARS" }],
         external_reference: `sena-${reserva.id}`,
         expiresEnMinutos:   360,
         returnPath:         "/reservas",
@@ -168,22 +280,28 @@ export const reservaService = {
       initPoint = pref.init_point ?? "";
       mpPrefId  = pref.id ?? "";
     } catch (err) {
-      console.error("[reservaService] Error generando preferencia MP:", err);
+      // Si MP falla y ya descontamos saldo, revertirlo
+      if (saldoAUsar > 0) {
+        await prisma.$transaction([
+          prisma.usuario.update({ where: { id: cliente.id }, data: { saldoFavor: { increment: saldoAUsar } } }),
+          prisma.movimientoSaldo.create({
+            data: {
+              clienteId:   cliente.id,
+              monto:       saldoAUsar,
+              tipo:        "REVERTIDO_RECHAZO_PAGO",
+              descripcion: "Saldo devuelto por error al generar pago MP",
+              reservaId:   reserva.id,
+            },
+          }),
+          prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } }),
+        ]);
+      }
+      throw new Error("Error al procesar el pago. Intentá nuevamente.");
     }
 
-    // Guardar el id de preferencia en la reserva para referencia futura
     if (mpPrefId) {
-      await prisma.reserva.update({
-        where: { id: reserva.id },
-        data:  { mpPrefId },
-      });
+      await prisma.reserva.update({ where: { id: reserva.id }, data: { mpPrefId } });
     }
-
-    // await mailReservaPendientePago(
-    //   { nombre: cliente.nombre, email: cliente.email },
-    //   { fecha: instancia.fecha, zona: instancia.zona },
-    //   initPoint
-    // );
 
     return { reserva, initPoint, sinCupo: false };
   },
@@ -352,9 +470,9 @@ export const reservaService = {
     const reserva = await prisma.reserva.findUnique({
       where: { id: reservaId },
       include: {
-        cliente:  true,
+        cliente:   true,
         instancia: true,
-        pagos:    { include: { logs: true } },
+        pagos:     { include: { logs: true } },
       },
     });
     if (!reserva) throw new Error("Reserva no encontrada");
@@ -425,14 +543,16 @@ export const reservaService = {
 
   // ─── CANCELACIÓN NO ABONADO ───────────────────────────────────────
   // PENDIENTE_PAGO: no hay pago que revertir, solo cancelar.
-  // RESERVA_PAGA con > 24hs: reembolso vía MP.
+  // RESERVA_PAGA con > 24hs: acreditar montoPagado como saldoFavor (sin MP).
   // RESERVA_PAGA con < 24hs: pierde la seña.
 
   async _cancelarNoAbonado(
     reserva: {
-      id:     number;
-      estado: string;
-      pagos:  Array<{ id: number; monto: object; logs: Array<{ mpPaymentId?: string | null }> }>;
+      id:             number;
+      estado:         string;
+      montoPagado:    object;
+      saldoUtilizado: object;
+      pagos:          Array<{ id: number; monto: object; logs: Array<{ mpPaymentId?: string | null }> }>;
     },
     cliente:   { id: number; nombre: string; email: string },
     instancia: { id: number; fecha: Date; zona: ZonaClase },
@@ -440,9 +560,27 @@ export const reservaService = {
   ) {
     const { estado, pagos } = reserva;
 
-    // ── Sin pago aún (no llegó a pagar la seña) ──
+    // ── Sin pago aún ──
     if (estado === "PENDIENTE_PAGO") {
       await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
+
+      // Si había saldo pre-descontado (reserva parcial que nunca pagó MP), devolverlo
+      const saldoPreDescontado = Number(reserva.saldoUtilizado);
+      if (saldoPreDescontado > 0) {
+        await prisma.$transaction([
+          prisma.usuario.update({ where: { id: cliente.id }, data: { saldoFavor: { increment: saldoPreDescontado } } }),
+          prisma.movimientoSaldo.create({
+            data: {
+              clienteId:   cliente.id,
+              monto:       saldoPreDescontado,
+              tipo:        "REVERTIDO_RECHAZO_PAGO",
+              descripcion: `Cancelación de reserva sin pago: ${instancia.zona} · ${instancia.fecha.toLocaleDateString("es-AR")}`,
+              reservaId:   reserva.id,
+            },
+          }),
+        ]);
+      }
+
       await mailReservaCancelada(
         { nombre: cliente.nombre, email: cliente.email },
         { fecha: instancia.fecha, zona: instancia.zona }
@@ -451,44 +589,55 @@ export const reservaService = {
       return;
     }
 
-    // ── Seña pagada: aplicar política de cancelación ──
+    // ── Seña pagada ──
     if (estado === "RESERVA_PAGA") {
       const msHasta   = instancia.fecha.getTime() - Date.now();
       const hs24      = 24 * 60 * 60 * 1000;
       const conTiempo = msHasta >= hs24;
-
-      const pagoPrincipal = pagos[0];
-      const mpPaymentId   = pagoPrincipal?.logs.find((l) => l.mpPaymentId)?.mpPaymentId ?? null;
+      const montoPagado = Number(reserva.montoPagado);
 
       await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
 
       if (conTiempo) {
-        // Reembolso total vía MP
-        if (mpPaymentId) {
-          try {
-            await reembolsarPago(mpPaymentId);
-          } catch (err) {
-            console.error("[reservaService] Error procesando reembolso MP:", err);
-          }
-        }
+        // Acreditar todo lo pagado como saldo (sin llamar a MP)
+        await prisma.$transaction([
+          prisma.usuario.update({ where: { id: cliente.id }, data: { saldoFavor: { increment: montoPagado } } }),
+          prisma.movimientoSaldo.create({
+            data: {
+              clienteId:   cliente.id,
+              monto:       montoPagado,
+              tipo:        "ACREDITADO_CANCELACION_RESERVA",
+              descripcion: `Cancelación con anticipación: ${instancia.zona} · ${instancia.fecha.toLocaleDateString("es-AR")}`,
+              reservaId:   reserva.id,
+            },
+          }),
+        ]);
 
+        // Log de pago para auditoría si existía pago MP
+        const pagoPrincipal = pagos[0];
         if (pagoPrincipal) {
           await prisma.pagoLog.create({
             data: {
               pagoId:        pagoPrincipal.id,
               evento:        "REVERTIDO",
-              mpPaymentId:   mpPaymentId ?? undefined,
               solicitadoPor: solicitanteId,
+              mpRawResponse: { nota: "Monto acreditado como saldo a favor (sin reembolso MP)" },
             },
           });
-          await mailReembolsoProcesado(
-            { nombre: cliente.nombre, email: cliente.email },
-            { monto: Number(pagoPrincipal.monto) }
-          );
         }
+
+        await mailSaldoAcreditado(
+          { nombre: cliente.nombre, email: cliente.email },
+          {
+            monto:   montoPagado,
+            motivo:  "Cancelaste tu reserva con anticipación. Te acreditamos el monto como saldo a favor.",
+            instancia: { fecha: instancia.fecha, zona: instancia.zona },
+          }
+        );
       } else {
         // Menos de 24hs: pierde la seña
         const nota = "Cancelaste con menos de 24hs de anticipación. Perdés la seña abonada.";
+        const pagoPrincipal = pagos[0];
         if (pagoPrincipal) {
           await prisma.pagoLog.create({
             data: {
@@ -510,7 +659,7 @@ export const reservaService = {
       return;
     }
 
-    // Estado inesperado: cancelar de todas formas sin lógica de pago
+    // Estado inesperado
     await prisma.reserva.update({ where: { id: reserva.id }, data: { estado: "CANCELADA" } });
     await mailReservaCancelada(
       { nombre: cliente.nombre, email: cliente.email },

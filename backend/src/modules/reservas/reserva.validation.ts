@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { tarjetaSchema } from "../pagos/pago.validation";
 
 export const crearReservaSchema = z.object({
   instanciaId: z.number({ required_error: "instanciaId es requerido" }).int().positive(),
+  tarjeta:     tarjetaSchema.optional(), // presente solo cuando el cliente elige pagar con tarjeta
 });
 
 export const cambiarClaseSchema = z.object({

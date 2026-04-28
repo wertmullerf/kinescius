@@ -44,6 +44,13 @@ enum MetodoPago {
   EFECTIVO
   TRANSFERENCIA
   MERCADO_PAGO
+  TARJETA
+}
+
+enum TipoTarjeta {
+  VISA
+  MASTERCARD
+  AMEX
 }
 
 enum TipoPago {
@@ -71,14 +78,16 @@ model Usuario {
   tipoCliente       TipoCliente @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
   clasesDisponibles Int         @default(0) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona
   sancionado        Boolean     @default(false) // solo aplica cuando rol == CLIENTE y tipoCliente == ABONADO; se levanta con el próximo abono
+  saldoFavor        Decimal     @default(0) @db.Decimal(10, 2) // crédito monetario acumulado (cancelaciones, etc.)
   twoFactorCode     String?     // hash bcrypt del código 2FA (solo admin, temporal)
   twoFactorExpires  DateTime?   // expiración del código 2FA
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
-  reservas      Reserva[]
-  colasEspera   ColaEspera[]
-  abonosPagados PagoAbono[]
+  reservas          Reserva[]
+  colasEspera       ColaEspera[]
+  abonosPagados     PagoAbono[]
+  movimientosSaldo  MovimientoSaldo[]
 
   @@map("usuarios")
 }
@@ -194,7 +203,8 @@ model Reserva {
   id          Int           @id @default(autoincrement())
   estado      EstadoReserva @default(PENDIENTE_PAGO)
   montoPagado Decimal       @default(0) @db.Decimal(10, 2) // total pagado hasta el momento
-  mpPrefId    String? // id de la preferencia MP (solo no abonados, mientras PENDIENTE_PAGO)
+  mpPrefId       String?  // id de la preferencia MP (solo no abonados, mientras PENDIENTE_PAGO)
+  saldoUtilizado Decimal  @default(0) @db.Decimal(10, 2) // porción de montoPagado cubierta con saldoFavor
 
   clienteId Int
   cliente   Usuario @relation(fields: [clienteId], references: [id])
@@ -205,8 +215,9 @@ model Reserva {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  pagos      Pago[]
-  asistencia Asistencia?
+  pagos            Pago[]
+  asistencia       Asistencia?
+  movimientosSaldo MovimientoSaldo[]
 
   // Índice único parcial gestionado por migración manual:
   // UNIQUE (clienteId, instanciaId) WHERE estado NOT IN ('CANCELADA', 'COMPLETADA')
@@ -219,11 +230,12 @@ model Reserva {
 // ─────────────────────────────────────────
 
 model Pago {
-  id         Int        @id @default(autoincrement())
-  monto      Decimal    @db.Decimal(10, 2)
-  metodo     MetodoPago
-  tipo       TipoPago
-  referencia String? // número de transferencia, recibo, etc.
+  id               Int        @id @default(autoincrement())
+  monto            Decimal    @db.Decimal(10, 2)
+  metodo           MetodoPago
+  tipo             TipoPago
+  referencia       String? // número de transferencia, recibo, etc.
+  tarjetaUltimos4  String? // últimos 4 dígitos si se pagó con tarjeta
 
   reservaId Int
   reserva   Reserva @relation(fields: [reservaId], references: [id])
@@ -314,17 +326,64 @@ model Configuracion {
   @@map("configuracion")
 }
 
+// ─────────────────────────────────────────
+// MOVIMIENTO SALDO
+// Auditoría completa de cada cambio en el saldoFavor de un usuario:
+// acreditaciones por cancelación, uso en reservas, devoluciones y reclamos.
+// ─────────────────────────────────────────
+
+enum TipoMovimientoSaldo {
+  ACREDITADO_CANCELACION_CLASE     // admin canceló una clase que tenía reserva paga
+  ACREDITADO_CANCELACION_RESERVA   // cliente canceló con anticipación (en vez de reembolso MP)
+  UTILIZADO_RESERVA                // saldo aplicado al crear una reserva
+  REVERTIDO_RECHAZO_PAGO          // MP rechazó el pago, se devuelve el saldo usado
+  RECLAMADO                        // cliente retiró su saldo (queda en 0 en DB)
+}
+
+model MovimientoSaldo {
+  id          Int                  @id @default(autoincrement())
+  clienteId   Int
+  cliente     Usuario              @relation(fields: [clienteId], references: [id])
+  monto       Decimal              @db.Decimal(10, 2)
+  tipo        TipoMovimientoSaldo
+  descripcion String
+  reservaId   Int?
+  reserva     Reserva?             @relation(fields: [reservaId], references: [id])
+  createdAt   DateTime             @default(now())
+
+  @@map("movimientos_saldo")
+}
+
 model PagoAbono {
-  id             Int        @id @default(autoincrement())
-  clienteId      Int
-  cliente        Usuario    @relation(fields: [clienteId], references: [id])
-  cantidadClases Int
-  monto          Decimal    @db.Decimal(10, 2)
-  metodo         MetodoPago
-  referencia     String? // número de recibo, transferencia, etc.
-  mpPaymentId    String? // id del pago en MP si fue vía webhook
-  mpRawResponse  Json? // respuesta cruda de MP para debugging
-  createdAt      DateTime   @default(now())
+  id               Int        @id @default(autoincrement())
+  clienteId        Int
+  cliente          Usuario    @relation(fields: [clienteId], references: [id])
+  cantidadClases   Int
+  monto            Decimal    @db.Decimal(10, 2)
+  metodo           MetodoPago
+  referencia       String? // número de recibo, transferencia, etc.
+  tarjetaUltimos4  String? // últimos 4 dígitos si se pagó con tarjeta
+  mpPaymentId      String? // id del pago en MP si fue vía webhook
+  mpRawResponse    Json? // respuesta cruda de MP para debugging
+  createdAt        DateTime   @default(now())
 
   @@map("pagos_abono")
+}
+
+// ─────────────────────────────────────────
+// TARJETA FICTICIA
+// Tarjetas de prueba precargadas para el flujo de pago con tarjeta.
+// ─────────────────────────────────────────
+
+model TarjetaFicticia {
+  id              Int         @id @default(autoincrement())
+  numero          String      @unique // número completo (solo para validación interna)
+  cvv             String
+  fechaExpiracion String      // MM/YY
+  titular         String
+  tipo            TipoTarjeta
+  activa          Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+
+  @@map("tarjetas_ficticias")
 }

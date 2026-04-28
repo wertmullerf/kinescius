@@ -1,5 +1,5 @@
 import { get, post } from '@/api/client'
-import type { Pago, PagoAbono, MetodoPago, ZonaClase, EstadoReserva } from '@/types'
+import type { Pago, PagoAbono, MetodoPago, ZonaClase, EstadoReserva, CardData } from '@/types'
 
 export interface PagoAbonoConCliente extends PagoAbono {
   cliente: { id: number; nombre: string; apellido: string; email: string }
@@ -36,6 +36,13 @@ export const pagosApi = {
     cantidadClases: number
     precioPorClase: number
   }) => post<AbonoMpResponse>('/pagos/abono/mp', data),
+
+  // Cliente: pagar abono con tarjeta ficticia
+  pagarAbonoTarjeta: (data: {
+    cantidadClases: number
+    precioPorClase: number
+    tarjeta: CardData
+  }) => post<PagoAbono>('/pagos/abono/tarjeta', data),
 
   // Admin: registrar complemento de pago
   registrarComplemento: (reservaId: number, data: {

@@ -183,8 +183,9 @@ export const authService = {
         tipoCliente:       true,
         clasesDisponibles: true,
         sancionado:        true,
+        saldoFavor:        true,
         createdAt:         true,
-        // password excluido explícitamente
+        // password y campos 2FA excluidos explícitamente
       },
     });
 

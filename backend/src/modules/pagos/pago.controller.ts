@@ -27,6 +27,25 @@ export const pagoController = {
     }
   },
 
+  // POST /api/pagos/abono/tarjeta
+  async pagarAbonoTarjeta(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { cantidadClases, precioPorClase, tarjeta } = req.body;
+      const cliente = await prisma.usuario.findUnique({ where: { id: req.user!.id } });
+      const descuento = cliente?.sancionado ? 0 : 0.20;
+      const monto = Math.round(Number(cantidadClases) * Number(precioPorClase) * (1 - descuento));
+      const resultado = await pagoService.pagarAbonoConTarjeta(
+        req.user!.id,
+        Number(cantidadClases),
+        monto,
+        tarjeta
+      );
+      created(res, resultado, "Abono acreditado correctamente");
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // POST /api/pagos/abono/mp
   async iniciarAbonoMp(req: Request, res: Response, next: NextFunction) {
     try {

@@ -2,7 +2,7 @@ import { prisma } from "../../db/prisma";
 import { ZonaClase } from "../../types/models";
 import { parseHora, formatHora, generarFechasDelMes } from "../../utils/clases";
 import { configuracionService } from "../configuracion/configuracion.service";
-import { mailClaseModificada, mailInstanciaCancelada } from "../../utils/mailer";
+import { mailClaseModificada, mailInstanciaCancelada, mailSaldoAcreditado } from "../../utils/mailer";
 
 async function getConfigClase(): Promise<{ precio: number; duracion: number }> {
   const [precioStr, minutosStr] = await Promise.all([
@@ -285,6 +285,10 @@ export const claseService = {
     const agenda = await prisma.agendaMensual.findUnique({ where: { id: agendaId } });
     if (!agenda) throw new Error("Agenda no encontrada");
 
+    // Rango del mes completo para incluir clases sueltas del mismo mes
+    const mesInicio = new Date(Date.UTC(agenda.anio, agenda.mes - 1, 1));
+    const mesFin    = new Date(Date.UTC(agenda.anio, agenda.mes,     1));
+
     // Filtro por fecha: rango del día completo en UTC
     let fechaFiltro: { gte: Date; lt: Date } | undefined;
     if (filters?.fecha) {
@@ -295,7 +299,10 @@ export const claseService = {
 
     const instancias = await prisma.claseInstancia.findMany({
       where: {
-        recurrente: { agendaId },
+        OR: [
+          { recurrente: { agendaId } },
+          { recurrenteId: null, fecha: { gte: mesInicio, lt: mesFin } },
+        ],
         ...(fechaFiltro   && { fecha: fechaFiltro }),
         ...(filters?.zona && { zona: filters.zona }),
       },
@@ -375,41 +382,68 @@ export const claseService = {
   },
 
   async cancelarInstancia(id: number) {
-    const instancia = await prisma.claseInstancia.findUnique({
-      where: { id },
-    });
+    const instancia = await prisma.claseInstancia.findUnique({ where: { id } });
     if (!instancia) throw new Error("Instancia no encontrada");
 
-    // Obtener reservas activas con datos del cliente para notificar
     const reservas = await prisma.reserva.findMany({
       where: {
         instanciaId: id,
         estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
       },
-      include: { cliente: { select: { nombre: true, email: true } } },
+      include: { cliente: true },
     });
 
-    // Cancelar todas las reservas activas y marcar la instancia como cancelada
-    await prisma.$transaction([
-      prisma.reserva.updateMany({
-        where: {
-          instanciaId: id,
-          estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] },
-        },
-        data: { estado: "CANCELADA" },
-      }),
-      prisma.claseInstancia.update({
+    // Transacción interactiva para manejar créditos individuales por reserva
+    await prisma.$transaction(async (tx) => {
+      // 1. Cancelar todas las reservas activas y marcar la instancia
+      await tx.reserva.updateMany({
+        where: { instanciaId: id, estado: { in: ["PENDIENTE_PAGO", "RESERVA_PAGA", "CONFIRMADA"] } },
+        data:  { estado: "CANCELADA" },
+      });
+      await tx.claseInstancia.update({
         where: { id },
-        data: { esExcepcion: true, motivoExcepcion: "CANCELADA" },
-      }),
-    ]);
+        data:  { esExcepcion: true, motivoExcepcion: "CANCELADA" },
+      });
 
-    // Notificar a cada cliente (fire-and-forget)
+      for (const reserva of reservas) {
+        // 2. ABONADO (CONFIRMADA): devolver la clase al saldo de clases
+        if (reserva.estado === "CONFIRMADA") {
+          await tx.usuario.update({
+            where: { id: reserva.clienteId },
+            data:  { clasesDisponibles: { increment: 1 } },
+          });
+        }
+
+        // 3. NO ABONADO (RESERVA_PAGA): acreditar monto como saldo monetario
+        if (reserva.estado === "RESERVA_PAGA" && Number(reserva.montoPagado) > 0) {
+          await tx.usuario.update({
+            where: { id: reserva.clienteId },
+            data:  { saldoFavor: { increment: reserva.montoPagado } },
+          });
+          await tx.movimientoSaldo.create({
+            data: {
+              clienteId:   reserva.clienteId,
+              monto:       reserva.montoPagado,
+              tipo:        "ACREDITADO_CANCELACION_CLASE",
+              descripcion: `Clase cancelada por el centro: ${instancia.zona} · ${instancia.fecha.toLocaleDateString("es-AR")}`,
+              reservaId:   reserva.id,
+            },
+          });
+        }
+      }
+    });
+
+    // Notificaciones por email (fire-and-forget)
     for (const r of reservas) {
-      mailInstanciaCancelada(r.cliente, {
-        fecha: instancia.fecha,
-        zona:  instancia.zona,
-      }).catch(() => {});
+      if (r.estado === "RESERVA_PAGA" && Number(r.montoPagado) > 0) {
+        mailSaldoAcreditado(r.cliente, {
+          monto:    Number(r.montoPagado),
+          motivo:   "El centro canceló una clase en la que tenías una reserva paga. Te acreditamos el monto como saldo a favor.",
+          instancia: { fecha: instancia.fecha, zona: instancia.zona },
+        }).catch(() => {});
+      } else {
+        mailInstanciaCancelada(r.cliente, { fecha: instancia.fecha, zona: instancia.zona }).catch(() => {});
+      }
     }
 
     return { canceladas: reservas.length };

@@ -1,5 +1,5 @@
 import { get, post, del, patch } from '@/api/client'
-import type { Reserva, CrearReservaResult } from '@/types'
+import type { Reserva, CrearReservaResult, CardData } from '@/types'
 
 export const reservasApi = {
   listar: (params?: { instanciaId?: number; clienteId?: number }) => {
@@ -12,8 +12,8 @@ export const reservasApi = {
 
   obtener: (id: number) => get<Reserva>(`/reservas/${id}`),
 
-  crear: (instanciaId: number) =>
-    post<CrearReservaResult>('/reservas', { instanciaId }),
+  crear: (instanciaId: number, tarjeta?: CardData) =>
+    post<CrearReservaResult>('/reservas', { instanciaId, ...(tarjeta ? { tarjeta } : {}) }),
 
   cambiar: (id: number, nuevaInstanciaId: number) =>
     patch<Reserva>(`/reservas/${id}/cambiar`, { nuevaInstanciaId }),

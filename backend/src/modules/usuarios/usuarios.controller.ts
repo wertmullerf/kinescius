@@ -52,4 +52,24 @@ export const usuariosController = {
       next(err);
     }
   },
+
+  // GET /api/usuarios/mi-saldo
+  async miSaldo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await usuariosService.miSaldo(req.user!.id);
+      ok(res, result);
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  // POST /api/usuarios/reclamar-saldo
+  async reclamarSaldo(req: Request, res: Response, next: NextFunction) {
+    try {
+      const result = await usuariosService.reclamarSaldo(req.user!.id);
+      ok(res, result, `Se procesó la devolución de $${result.monto}`);
+    } catch (err) {
+      next(err);
+    }
+  },
 };

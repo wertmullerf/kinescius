@@ -1160,21 +1160,29 @@ export function ClasesPage() {
                       className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"
                     >
                       {filteredSueltas.map(inst => {
-                        const fecha = new Date(inst.fecha)
+                        const fecha     = new Date(inst.fecha)
+                        const cancelada = inst.cancelada
                         return (
                           <motion.div
                             key={inst.id}
                             variants={staggerItem}
-                            className="bg-surface rounded-3xl shadow-card border border-surface-border p-5 hover:shadow-card-hover transition-shadow"
+                            className={`bg-surface rounded-3xl shadow-card border border-surface-border p-5 transition-shadow ${cancelada ? 'opacity-60' : 'hover:shadow-card-hover'}`}
                           >
                             {/* Fecha y hora */}
                             <div className="flex items-start justify-between mb-3">
                               <div>
-                                <p className="text-sm font-semibold text-text-primary">
-                                  {fecha.toLocaleDateString('es-AR', {
-                                    weekday: 'long', day: 'numeric', month: 'short'
-                                  })}
-                                </p>
+                                <div className="flex items-center gap-2">
+                                  <p className={`text-sm font-semibold ${cancelada ? 'line-through text-text-secondary' : 'text-text-primary'}`}>
+                                    {fecha.toLocaleDateString('es-AR', {
+                                      weekday: 'long', day: 'numeric', month: 'short'
+                                    })}
+                                  </p>
+                                  {cancelada && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-600 border border-red-200 font-medium">
+                                      Cancelada
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-text-secondary mt-0.5">
                                   {fecha.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
                                   {' · '}{inst.duracion} min
@@ -1197,6 +1205,17 @@ export function ClasesPage() {
                                 {formatCurrency(inst.precio)}
                               </span>
                             </div>
+
+                            {/* Acciones */}
+                            {isAdmin && !cancelada && (
+                              <button
+                                onClick={() => setCancelingInstancia(inst)}
+                                className="mt-3 w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-surface-border text-xs font-medium text-text-secondary hover:text-status-cancelada hover:border-status-cancelada/40 hover:bg-status-cancelada/5 transition-colors"
+                              >
+                                <NoSymbolIcon className="w-4 h-4" />
+                                Cancelar clase
+                              </button>
+                            )}
 
                             {/* Botón QR para profesor */}
                             {!isAdmin && (

@@ -11,8 +11,10 @@ export type {
   Reserva,
   Pago,
   PagoLog,
+  PagoAbono,
   Asistencia,
   ColaEspera,
+  TarjetaFicticia,
 } from "@prisma/client";
 
 export {
@@ -22,6 +24,7 @@ export {
   EstadoReserva,
   MetodoPago,
   TipoPago,
+  TipoTarjeta,
 } from "@prisma/client";
 
 // ─────────────────────────────────────────

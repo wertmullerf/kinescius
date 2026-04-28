@@ -11,6 +11,8 @@ import {
   ArrowsRightLeftIcon,
   FunnelIcon,
   XMarkIcon,
+  CreditCardIcon,
+  ArrowTopRightOnSquareIcon,
 } from '@heroicons/react/24/outline'
 import { reservasApi } from '@/api/endpoints/reservas'
 import { clasesApi } from '@/api/endpoints/clases'
@@ -18,13 +20,14 @@ import { colaApi } from '@/api/endpoints/cola'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Toast } from '@/components/ui/Toast'
+import { CardPaymentForm } from '@/components/ui/CardPaymentForm'
 import { fadeInUp, staggerContainer, staggerItem } from '@/utils/animations'
 import { formatCurrency, estadoLabel } from '@/utils/formatters'
 import { useAuth } from '@/hooks/useAuth'
 import { usePaymentStatus } from '@/hooks/usePaymentStatus'
 import { COLORS } from '@/constants/colors'
 import type {
-  Reserva, ClaseInstancia, AgendaMensual, EstadoReserva, ZonaClase, CrearReservaResult, Profesor, ColaEspera,
+  Reserva, ClaseInstancia, AgendaMensual, EstadoReserva, ZonaClase, CrearReservaResult, Profesor, ColaEspera, CardData,
 } from '@/types'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -96,6 +99,7 @@ function toLocalDateStr(fecha: string | Date): string {
 
 type BookingOutcome =
   | { type: 'confirmada' }
+  | { type: 'sena_pagada' }
   | { type: 'pendiente_pago'; initPoint: string }
   | { type: 'cola'; posicion: number }
 
@@ -117,6 +121,18 @@ function BookingResultModal({ outcome, onClose }: BookingResultModalProps) {
               <p className="font-semibold text-text-primary text-lg">¡Reserva confirmada!</p>
               <p className="text-text-secondary text-sm mt-1">
                 Se descontó 1 clase de tu saldo. Te enviamos un email de confirmación.
+              </p>
+            </div>
+          </>
+        )}
+
+        {outcome.type === 'sena_pagada' && (
+          <>
+            <CheckCircleIcon className="w-14 h-14 text-brand-green mx-auto" />
+            <div>
+              <p className="font-semibold text-text-primary text-lg">¡Seña confirmada!</p>
+              <p className="text-text-secondary text-sm mt-1">
+                Tu lugar está reservado. El saldo restante lo abonás el día de la clase.
               </p>
             </div>
           </>
@@ -524,14 +540,18 @@ interface ExplorarTabProps {
 function ExplorarTab({ reservas, onReservaCreated }: ExplorarTabProps) {
   const { user } = useAuth()
 
-  const [currentDate,  setCurrentDate]  = useState(new Date())
-  const [allAgendas,   setAllAgendas]   = useState<AgendaMensual[]>([])
-  const [agenda,       setAgenda]       = useState<AgendaMensual | null>(null)
-  const [instancias,   setInstancias]   = useState<ClaseInstancia[]>([])
-  const [loadingInit,  setLoadingInit]  = useState(true)
-  const [loadingInst,  setLoadingInst]  = useState(false)
-  const [bookingId,    setBookingId]    = useState<number | null>(null)
-  const [inQueue,      setInQueue]      = useState<Set<number>>(new Set())
+  const [currentDate,     setCurrentDate]     = useState(new Date())
+  const [allAgendas,      setAllAgendas]      = useState<AgendaMensual[]>([])
+  const [agenda,          setAgenda]          = useState<AgendaMensual | null>(null)
+  const [instancias,      setInstancias]      = useState<ClaseInstancia[]>([])
+  const [loadingInit,     setLoadingInit]     = useState(true)
+  const [loadingInst,     setLoadingInst]     = useState(false)
+  const [bookingId,       setBookingId]       = useState<number | null>(null)
+  const [inQueue,         setInQueue]         = useState<Set<number>>(new Set())
+  const [pendingInst,     setPendingInst]     = useState<ClaseInstancia | null>(null)
+  const [showCardForm,    setShowCardForm]    = useState(false)
+  const [cardBooking,     setCardBooking]     = useState(false)
+  const [cardBookingErr,  setCardBookingErr]  = useState('')
 
   // Cargar las colas activas del usuario para mostrar "Ya estás en lista de espera"
   useEffect(() => {
@@ -621,6 +641,34 @@ function ExplorarTab({ reservas, onReservaCreated }: ExplorarTabProps) {
   }
 
   async function handleReservar(inst: ClaseInstancia) {
+    // ABONADO: reserva directa sin elección de método de pago
+    if (user?.tipoCliente === 'ABONADO') {
+      setBookingId(inst.id)
+      try {
+        const result = await reservasApi.crear(inst.id)
+        onReservaCreated(result, inst)
+        if (!esCola(result)) {
+          setInstancias(prev => prev.map(i =>
+            i.id === inst.id ? { ...i, reservasActivas: (i.reservasActivas ?? 0) + 1 } : i
+          ))
+        } else {
+          setInQueue(prev => new Set(prev).add(inst.id))
+        }
+      } finally {
+        setBookingId(null)
+      }
+      return
+    }
+    // NO_ABONADO: mostrar picker de método de pago
+    setPendingInst(inst)
+    setShowCardForm(false)
+    setCardBookingErr('')
+  }
+
+  async function handleConfirmMp() {
+    if (!pendingInst) return
+    const inst = pendingInst
+    setPendingInst(null)
     setBookingId(inst.id)
     try {
       const result = await reservasApi.crear(inst.id)
@@ -634,6 +682,28 @@ function ExplorarTab({ reservas, onReservaCreated }: ExplorarTabProps) {
       }
     } finally {
       setBookingId(null)
+    }
+  }
+
+  async function handleConfirmTarjeta(cardData: CardData) {
+    if (!pendingInst) return
+    setCardBooking(true)
+    setCardBookingErr('')
+    try {
+      const result = await reservasApi.crear(pendingInst.id, cardData)
+      const inst = pendingInst
+      setPendingInst(null)
+      setShowCardForm(false)
+      onReservaCreated(result, inst)
+      if (!esCola(result)) {
+        setInstancias(prev => prev.map(i =>
+          i.id === inst.id ? { ...i, reservasActivas: (i.reservasActivas ?? 0) + 1 } : i
+        ))
+      }
+    } catch (err) {
+      setCardBookingErr(err instanceof Error ? err.message : 'Error al procesar la tarjeta')
+    } finally {
+      setCardBooking(false)
     }
   }
 
@@ -657,6 +727,7 @@ function ExplorarTab({ reservas, onReservaCreated }: ExplorarTabProps) {
   }
 
   return (
+    <>
     <div>
       {/* Navegación de mes */}
       <div className="flex items-center gap-3 mb-5">
@@ -832,6 +903,84 @@ function ExplorarTab({ reservas, onReservaCreated }: ExplorarTabProps) {
         </>
       )}
     </div>
+
+      {/* Modal de método de pago para NO_ABONADO */}
+      <Modal
+        open={pendingInst !== null}
+        onClose={() => { setPendingInst(null); setShowCardForm(false); setCardBookingErr('') }}
+        title="Elegí cómo pagar la seña"
+        maxWidth="sm"
+      >
+        {pendingInst && (() => {
+          const sena       = Math.round(pendingInst.precio * 0.5)
+          const saldoDisp  = Math.min(user?.saldoFavor ?? 0, sena)
+          const totalTarj  = sena - saldoDisp
+          const pricing    = saldoDisp > 0 ? { subtotal: sena, saldoFavor: saldoDisp, total: totalTarj } : undefined
+
+          return (
+          <div className="space-y-4">
+            {/* Info de la clase */}
+            <div className="bg-surface-muted rounded-xl px-4 py-3 text-sm">
+              <p className="font-medium text-text-primary">
+                {new Date(pendingInst.fecha).toLocaleDateString('es-AR', {
+                  weekday: 'long', day: 'numeric', month: 'long',
+                })}
+                {' · '}{formatHoraUtc(pendingInst.fecha)}
+              </p>
+              <p className="text-text-secondary mt-0.5">
+                Zona {pendingInst.zona}
+                {' · '}Seña: {formatCurrency(sena)}
+                {saldoDisp > 0 && (
+                  <span className="ml-1 text-brand-green font-medium">
+                    (tenés {formatCurrency(saldoDisp)} de saldo a favor)
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {!showCardForm ? (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => setShowCardForm(true)}
+                  className="flex flex-col items-center gap-2 py-4 px-3 rounded-2xl border-2 border-surface-border hover:border-brand-green transition-colors"
+                >
+                  <CreditCardIcon className="w-7 h-7 text-text-secondary" />
+                  <span className="text-sm font-semibold text-text-primary">Tarjeta</span>
+                  <span className="text-xs text-text-secondary text-center">
+                    {saldoDisp > 0 ? `Pagás ${formatCurrency(totalTarj)}` : 'Crédito o débito'}
+                  </span>
+                </button>
+                <button
+                  onClick={handleConfirmMp}
+                  className="flex flex-col items-center gap-2 py-4 px-3 rounded-2xl border-2 border-surface-border hover:border-brand-green transition-colors"
+                >
+                  <ArrowTopRightOnSquareIcon className="w-7 h-7 text-text-secondary" />
+                  <span className="text-sm font-semibold text-text-primary">Mercado Pago</span>
+                  <span className="text-xs text-text-secondary text-center">Checkout externo</span>
+                </button>
+              </div>
+            ) : (
+              <div>
+                <button
+                  onClick={() => { setShowCardForm(false); setCardBookingErr('') }}
+                  className="text-xs text-text-secondary hover:text-text-primary mb-3 flex items-center gap-1"
+                >
+                  ← Volver a opciones
+                </button>
+                <CardPaymentForm
+                  onSubmit={handleConfirmTarjeta}
+                  loading={cardBooking}
+                  error={cardBookingErr}
+                  pricing={pricing}
+                  submitLabel={`Pagar ${formatCurrency(totalTarj)}`}
+                />
+              </div>
+            )}
+          </div>
+          )
+        })()}
+      </Modal>
+    </>
   )
 }
 
@@ -1152,7 +1301,7 @@ export function ReservasPage() {
   const [cancelTarget,   setCancelTarget]   = useState<Reserva | null>(null)
   const [cambiarTarget,  setCambiarTarget]  = useState<Reserva | null>(null)
 
-  useEffect(() => {
+  const refreshReservas = useCallback(() => {
     Promise.all([
       reservasApi.listar(),
       clasesApi.listarAgendas(),
@@ -1162,6 +1311,16 @@ export function ReservasPage() {
     }).finally(() => setLoadingReservas(false))
   }, [])
 
+  useEffect(() => {
+    refreshReservas()
+  }, [refreshReservas])
+
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') refreshReservas() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [refreshReservas])
+
   const handleReservaCreated = useCallback(async (result: CrearReservaResult, _inst: ClaseInstancia) => {
     if (esCola(result)) {
       setBookingOutcome({ type: 'cola', posicion: result.posicionCola })
@@ -1169,6 +1328,8 @@ export function ReservasPage() {
       const reserva = result as Reserva & { initPoint?: string }
       if (reserva.initPoint) {
         setBookingOutcome({ type: 'pendiente_pago', initPoint: reserva.initPoint })
+      } else if (reserva.estado === 'RESERVA_PAGA') {
+        setBookingOutcome({ type: 'sena_pagada' })
       } else {
         setBookingOutcome({ type: 'confirmada' })
         await refreshUser()

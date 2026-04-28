@@ -7,7 +7,8 @@ export const reservaController = {
     try {
       const clienteId   = req.user!.id;
       const instanciaId = Number(req.body.instanciaId);
-      const resultado   = await reservaService.crear(clienteId, instanciaId);
+      const tarjeta     = req.body.tarjeta ?? undefined;
+      const resultado   = await reservaService.crear(clienteId, instanciaId, tarjeta);
 
       if (resultado.sinCupo) {
         const posicion = "posicionCola" in resultado ? resultado.posicionCola : undefined;

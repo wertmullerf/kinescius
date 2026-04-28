@@ -133,6 +133,52 @@ export const usuariosService = {
     });
   },
 
+  // ─── SALDO A FAVOR (CLIENTE) ─────────────────────────────────────────────
+
+  async miSaldo(clienteId: number) {
+    const usuario = await prisma.usuario.findUnique({
+      where:  { id: clienteId },
+      select: { saldoFavor: true },
+    });
+    if (!usuario) throw new Error("Usuario no encontrado");
+
+    const movimientos = await prisma.movimientoSaldo.findMany({
+      where:   { clienteId },
+      orderBy: { createdAt: "desc" },
+      take:    20,
+    });
+
+    return { saldoFavor: Number(usuario.saldoFavor), movimientos };
+  },
+
+  async reclamarSaldo(clienteId: number) {
+    const usuario = await prisma.usuario.findUnique({
+      where:  { id: clienteId },
+      select: { saldoFavor: true, nombre: true, email: true },
+    });
+    if (!usuario) throw new Error("Usuario no encontrado");
+
+    const monto = Number(usuario.saldoFavor);
+    if (monto <= 0) throw new Error("No tenés saldo a favor para retirar");
+
+    await prisma.$transaction([
+      prisma.usuario.update({
+        where: { id: clienteId },
+        data:  { saldoFavor: 0 },
+      }),
+      prisma.movimientoSaldo.create({
+        data: {
+          clienteId,
+          monto,
+          tipo:        "RECLAMADO",
+          descripcion: "Saldo reclamado por el cliente",
+        },
+      }),
+    ]);
+
+    return { monto };
+  },
+
   // ─── ELIMINAR CLIENTE ─────────────────────────────────────────────────────
   // Solo se permite si no tiene reservas activas.
 

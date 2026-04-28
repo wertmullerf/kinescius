@@ -9,6 +9,7 @@ import {
 import { colaService } from "../cola-espera/cola.service";
 import { mailReservaConfirmada } from "../../utils/mailer";
 import type { MetodoPago } from "../../types/models";
+import type { TarjetaDto } from "./pago.validation";
 
 export const pagoService = {
 
@@ -40,6 +41,67 @@ export const pagoService = {
           monto,
           metodo,
           referencia: referencia ?? null,
+        },
+        include: { cliente: { select: { id: true, nombre: true, apellido: true, email: true } } },
+      }),
+    ]);
+
+    await actualizarTipoCliente(clienteId, updatedUser.clasesDisponibles);
+
+    return pagoAbono;
+  },
+
+  // ─── VALIDAR TARJETA ──────────────────────────────────────────────────────
+  // Verifica que la tarjeta exista en la tabla de tarjetas ficticias y
+  // que todos los datos coincidan. Retorna los últimos 4 dígitos si es válida.
+
+  async _validarTarjeta(tarjeta: TarjetaDto): Promise<string> {
+    const registro = await prisma.tarjetaFicticia.findUnique({
+      where: { numero: tarjeta.numero.replace(/\s/g, "") },
+    });
+
+    if (!registro || !registro.activa) {
+      throw new Error("Tarjeta no válida o no autorizada");
+    }
+    if (registro.cvv !== tarjeta.cvv) {
+      throw new Error("Código de seguridad incorrecto");
+    }
+    if (registro.fechaExpiracion !== tarjeta.fechaExpiracion) {
+      throw new Error("Fecha de vencimiento incorrecta");
+    }
+    // El titular es libre — el usuario puede poner su propio nombre.
+    // Solo validamos número, CVV y vencimiento contra la tabla ficticia.
+
+    return registro.numero.slice(-4);
+  },
+
+  // ─── ABONO POR TARJETA (CLIENTE) ──────────────────────────────────────────
+  // Valida la tarjeta ficticia y acredita las clases de forma inmediata.
+
+  async pagarAbonoConTarjeta(
+    clienteId:      number,
+    cantidadClases: number,
+    monto:          number,
+    tarjeta:        TarjetaDto
+  ) {
+    const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
+    if (!cliente)                  throw new Error("Cliente no encontrado");
+    if (cliente.rol !== "CLIENTE") throw new Error("El usuario no es un cliente");
+
+    const ultimos4 = await this._validarTarjeta(tarjeta);
+
+    const [updatedUser, pagoAbono] = await prisma.$transaction([
+      prisma.usuario.update({
+        where: { id: clienteId },
+        data:  { clasesDisponibles: { increment: cantidadClases }, sancionado: false },
+      }),
+      prisma.pagoAbono.create({
+        data: {
+          clienteId,
+          cantidadClases,
+          monto,
+          metodo:         "TARJETA",
+          tarjetaUltimos4: ultimos4,
         },
         include: { cliente: { select: { id: true, nombre: true, apellido: true, email: true } } },
       }),
@@ -338,6 +400,26 @@ export const pagoService = {
         where: { id: reservaId },
         data:  { estado: "CANCELADA" },
       });
+
+      // Si se había pre-descontado saldo, devolverlo
+      const saldoADevolver = Number(reserva.saldoUtilizado);
+      if (saldoADevolver > 0) {
+        await prisma.$transaction([
+          prisma.usuario.update({
+            where: { id: reserva.clienteId },
+            data:  { saldoFavor: { increment: saldoADevolver } },
+          }),
+          prisma.movimientoSaldo.create({
+            data: {
+              clienteId:   reserva.clienteId,
+              monto:       saldoADevolver,
+              tipo:        "REVERTIDO_RECHAZO_PAGO",
+              descripcion: `Pago MP rechazado (${mpStatus}). Saldo devuelto.`,
+              reservaId,
+            },
+          }),
+        ]);
+      }
     }
 
     const monto = mpData.transaction_amount ?? 0;

@@ -20,7 +20,7 @@ import { fadeInUp } from '@/utils/animations'
 import { formatCurrency, formatDate, tipoPagoLabel, metodoPagoLabel, zonaLabel } from '@/utils/formatters'
 import type { MetodoPago, TipoPago, Reserva } from '@/types'
 
-const METODOS: MetodoPago[] = ['EFECTIVO', 'TRANSFERENCIA', 'MERCADO_PAGO']
+const METODOS: MetodoPago[] = ['EFECTIVO', 'TRANSFERENCIA', 'MERCADO_PAGO', 'TARJETA']
 
 // ─── Modal: Registrar Abono Presencial ────────────────────────────────────────
 

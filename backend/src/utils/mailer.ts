@@ -255,6 +255,54 @@ export async function mailInstanciaCancelada(
   );
 }
 
+export async function mailSaldoAcreditado(
+  cliente:  { nombre: string; email: string },
+  datos:    { monto: number; motivo: string; instancia?: { fecha: Date; zona: string } }
+) {
+  const NARANJA = "#e65100";
+  const detalle = datos.instancia
+    ? `<div style="background:${GRIS_SUAVE};padding:14px 18px;border-radius:8px;margin:16px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:#757575;text-transform:uppercase;letter-spacing:1px">Clase</p>
+         <p style="margin:0;font-size:14px;color:${GRIS_TEXTO}">${datos.instancia.zona} · ${formatFecha(datos.instancia.fecha)}</p>
+       </div>`
+    : "";
+  await send(
+    cliente.email,
+    "Saldo a favor acreditado — Kinescius",
+    layout(
+      "Saldo a favor acreditado",
+      `<p>Hola <strong>${cliente.nombre}</strong>,</p>
+       <p>${datos.motivo}</p>
+       ${detalle}
+       <div style="background:#fff3e0;border-left:4px solid ${NARANJA};padding:16px 20px;border-radius:0 8px 8px 0;margin:20px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:${NARANJA};font-weight:600;text-transform:uppercase;letter-spacing:1px">Saldo acreditado</p>
+         <p style="margin:0;font-size:28px;font-weight:700;color:${NARANJA}">$${datos.monto}</p>
+       </div>
+       <p style="color:#616161;font-size:14px">Podés usar este saldo en tu próxima reserva o retirarlo desde la app en la sección <strong>Abonos</strong>.</p>`
+    )
+  );
+}
+
+export async function mailSaldoReclamado(
+  cliente: { nombre: string; email: string },
+  monto:   number
+) {
+  await send(
+    cliente.email,
+    "Devolución de saldo — Kinescius",
+    layout(
+      "Devolución de saldo procesada",
+      `<p>Hola <strong>${cliente.nombre}</strong>,</p>
+       <p>Procesamos la devolución de tu saldo a favor.</p>
+       <div style="background:${VERDE_CLARO};border-left:4px solid ${VERDE};padding:16px 20px;border-radius:0 8px 8px 0;margin:20px 0">
+         <p style="margin:0 0 4px;font-size:13px;color:${VERDE};font-weight:600;text-transform:uppercase;letter-spacing:1px">Monto devuelto</p>
+         <p style="margin:0;font-size:28px;font-weight:700;color:${VERDE}">$${monto}</p>
+       </div>
+       <p style="color:#616161;font-size:14px">El equipo del centro coordinará la devolución del dinero. Si tenés alguna consulta, contactanos directamente.</p>`
+    )
+  );
+}
+
 export async function mail2FACode(
   admin: { nombre: string; email: string },
   codigo: string

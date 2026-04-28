@@ -7,7 +7,7 @@ export type EstadoReserva =
   | 'CONFIRMADA'
   | 'CANCELADA'
   | 'COMPLETADA'
-export type MetodoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO'
+export type MetodoPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'MERCADO_PAGO' | 'TARJETA'
 export type TipoPago = 'SENA' | 'COMPLEMENTO' | 'ABONO'
 
 export interface Usuario {
@@ -51,6 +51,7 @@ export interface Reserva {
   id: number
   estado: EstadoReserva
   montoPagado: number
+  saldoUtilizado: number
   mpPrefId?: string
   clienteId: number
   instanciaId: number
@@ -61,12 +62,20 @@ export interface Reserva {
   createdAt: string
 }
 
+export interface CardData {
+  numero: string
+  cvv: string
+  fechaExpiracion: string
+  titular: string
+}
+
 export interface Pago {
   id: number
   monto: number
   metodo: MetodoPago
   tipo: TipoPago
   referencia?: string
+  tarjetaUltimos4?: string
   reservaId: number
   createdAt: string
 }
@@ -78,6 +87,7 @@ export interface PagoAbono {
   monto: number
   metodo: MetodoPago
   referencia?: string
+  tarjetaUltimos4?: string
   mpPaymentId?: string
   createdAt: string
 }
@@ -100,6 +110,23 @@ export interface ColaEspera {
   instancia?: ClaseInstancia
 }
 
+export type TipoMovimientoSaldo =
+  | 'ACREDITADO_CANCELACION_CLASE'
+  | 'ACREDITADO_CANCELACION_RESERVA'
+  | 'UTILIZADO_RESERVA'
+  | 'REVERTIDO_RECHAZO_PAGO'
+  | 'RECLAMADO'
+
+export interface MovimientoSaldo {
+  id: number
+  clienteId: number
+  monto: number
+  tipo: TipoMovimientoSaldo
+  descripcion: string
+  reservaId?: number
+  createdAt: string
+}
+
 export interface AuthUser {
   id: number
   nombre: string
@@ -109,6 +136,7 @@ export interface AuthUser {
   tipoCliente?: TipoCliente
   clasesDisponibles?: number
   sancionado?: boolean
+  saldoFavor?: number
 }
 
 export interface LoginResponse {

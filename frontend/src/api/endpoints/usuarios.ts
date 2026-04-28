@@ -1,5 +1,5 @@
-import { get, put, del } from '@/api/client'
-import type { Usuario, EstadoReserva, ZonaClase } from '@/types'
+import { get, put, del, post } from '@/api/client'
+import type { Usuario, EstadoReserva, ZonaClase, MovimientoSaldo } from '@/types'
 
 export interface UsuarioAdmin extends Omit<Usuario, 'rol'> {
   rol: 'ADMIN' | 'PROFESOR' | 'CLIENTE'
@@ -34,4 +34,10 @@ export const usuariosApi = {
     put<UsuarioAdmin>(`/usuarios/${id}`, data),
 
   eliminar: (id: number) => del<void>(`/usuarios/${id}`),
+
+  miSaldo: () =>
+    get<{ saldoFavor: number; movimientos: MovimientoSaldo[] }>('/usuarios/mi-saldo'),
+
+  reclamarSaldo: () =>
+    post<{ monto: number }>('/usuarios/reclamar-saldo', {}),
 }

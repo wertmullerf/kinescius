@@ -38,9 +38,10 @@ export const zonaLabel: Record<ZonaClase, string> = {
 }
 
 export const metodoPagoLabel: Record<MetodoPago, string> = {
-  EFECTIVO:     'Efectivo',
+  EFECTIVO:      'Efectivo',
   TRANSFERENCIA: 'Transferencia',
-  MERCADO_PAGO: 'Mercado Pago',
+  MERCADO_PAGO:  'Mercado Pago',
+  TARJETA:       'Tarjeta',
 }
 
 export const tipoPagoLabel: Record<TipoPago, string> = {
