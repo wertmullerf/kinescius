@@ -1,9 +1,12 @@
 import { post, get } from '@/api/client'
-import type { LoginResponse, AuthUser } from '@/types'
+import type { LoginResponse, TwoFARequired, AuthUser } from '@/types'
 
 export const authApi = {
   login: (email: string, password: string) =>
-    post<LoginResponse>('/auth/login', { email, password }),
+    post<LoginResponse | TwoFARequired>('/auth/login', { email, password }),
+
+  verify2FA: (userId: number, codigo: string) =>
+    post<LoginResponse>('/auth/verify-2fa', { userId, codigo }),
 
   register: (data: {
     nombre: string

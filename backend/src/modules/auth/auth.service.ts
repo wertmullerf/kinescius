@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../../db/prisma";
 import { env } from "../../config/env";
-import { mailRestablecerContrasenia } from "../../utils/mailer";
+import { mailRestablecerContrasenia, mail2FACode } from "../../utils/mailer";
 
 // ─── Tipos internos ───────────────────────────────────────────────
 
@@ -85,7 +85,49 @@ export const authService = {
     const passwordOk = await bcrypt.compare(password, usuario.password);
     if (!passwordOk) throw new Error("Credenciales incorrectas");
 
-    const { password: _, ...usuarioSinPassword } = usuario;
+    // 2FA obligatorio para administradores
+    if (usuario.rol === "ADMIN") {
+      const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+      const codigoHash = await bcrypt.hash(codigo, 10);
+      const expira = new Date(Date.now() + 10 * 60 * 1000); // 10 minutos
+
+      await prisma.usuario.update({
+        where: { id: usuario.id },
+        data: { twoFactorCode: codigoHash, twoFactorExpires: expira },
+      });
+
+      await mail2FACode({ nombre: usuario.nombre, email: usuario.email }, codigo);
+
+      return { requires2FA: true as const, userId: usuario.id };
+    }
+
+    const { password: _, twoFactorCode: __, twoFactorExpires: ___, ...usuarioSinPassword } = usuario;
+    const token = generarToken(usuario);
+
+    return { usuario: usuarioSinPassword, token };
+  },
+
+  async verify2FA(userId: number, codigo: string) {
+    const usuario = await prisma.usuario.findUnique({ where: { id: userId } });
+
+    if (!usuario || !usuario.twoFactorCode || !usuario.twoFactorExpires) {
+      throw new Error("Código inválido");
+    }
+
+    if (new Date() > usuario.twoFactorExpires) {
+      throw new Error("El código expiró. Iniciá sesión nuevamente");
+    }
+
+    const codigoOk = await bcrypt.compare(codigo, usuario.twoFactorCode);
+    if (!codigoOk) throw new Error("Código incorrecto");
+
+    // Limpiar código una vez usado (single-use)
+    await prisma.usuario.update({
+      where: { id: usuario.id },
+      data: { twoFactorCode: null, twoFactorExpires: null },
+    });
+
+    const { password: _, twoFactorCode: __, twoFactorExpires: ___, ...usuarioSinPassword } = usuario;
     const token = generarToken(usuario);
 
     return { usuario: usuarioSinPassword, token };

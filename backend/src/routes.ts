@@ -9,6 +9,7 @@ import colaRoutes           from "./modules/cola-espera/cola.routes";
 import usuariosRoutes       from "./modules/usuarios/usuarios.routes";
 import asistenciasRoutes    from "./modules/asistencias/asistencia.routes";
 import configuracionRoutes  from "./modules/configuracion/configuracion.routes";
+import reportesRoutes       from "./modules/reportes/reportes.routes";
 
 // Aquí se registran todas las rutas de la API.
 // Para agregar un módulo nuevo: importarlo y añadir un app.use abajo.
@@ -36,4 +37,5 @@ export function registerRoutes(app: Application): void {
   app.use("/api/usuarios",       usuariosRoutes);
   app.use("/api/asistencias",    asistenciasRoutes);
   app.use("/api/config",         configuracionRoutes);
+  app.use("/api/reportes",       reportesRoutes);
 }

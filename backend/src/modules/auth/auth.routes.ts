@@ -11,6 +11,7 @@ router.post("/register", validate(registerSchema), authController.register);
 router.post("/login", validate(loginSchema), authController.login);
 router.post("/forgot-password", authController.forgotPassword);
 router.post("/reset-password", authController.resetPassword);
+router.post("/verify-2fa", authController.verify2FA);
 
 // Rutas protegidas (requieren JWT válido)
 router.post("/logout", authenticateToken, authController.logout);

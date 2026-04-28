@@ -25,19 +25,29 @@ export const pagoService = {
     referencia?:    string
   ) {
     const cliente = await prisma.usuario.findUnique({ where: { id: clienteId } });
-    if (!cliente)              throw new Error("Cliente no encontrado");
+    if (!cliente)                  throw new Error("Cliente no encontrado");
     if (cliente.rol !== "CLIENTE") throw new Error("El usuario no es un cliente");
 
-    const nuevasClases = cliente.clasesDisponibles + cantidadClases;
+    const [updatedUser, pagoAbono] = await prisma.$transaction([
+      prisma.usuario.update({
+        where: { id: clienteId },
+        data:  { clasesDisponibles: { increment: cantidadClases }, sancionado: false },
+      }),
+      prisma.pagoAbono.create({
+        data: {
+          clienteId,
+          cantidadClases,
+          monto,
+          metodo,
+          referencia: referencia ?? null,
+        },
+        include: { cliente: { select: { id: true, nombre: true, apellido: true, email: true } } },
+      }),
+    ]);
 
-    await prisma.usuario.update({
-      where: { id: clienteId },
-      data:  { clasesDisponibles: nuevasClases, sancionado: false },
-    });
+    await actualizarTipoCliente(clienteId, updatedUser.clasesDisponibles);
 
-    await actualizarTipoCliente(clienteId, nuevasClases);
-
-    return { clienteId, cantidadClases, nuevasClases, monto, metodo };
+    return pagoAbono;
   },
 
   // ─── ABONO POR MP (CLIENTE) ───────────────────────────────────────────────

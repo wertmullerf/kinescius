@@ -3,11 +3,16 @@ import type { ReactNode } from 'react'
 import { authApi } from '@/api/endpoints/auth'
 import type { AuthUser } from '@/types'
 
+export type LoginResult =
+  | { type: 'success'; user: AuthUser }
+  | { type: '2fa_required'; userId: number }
+
 interface AuthContextValue {
   user: AuthUser | null
   token: string | null
   isLoading: boolean
-  login: (email: string, password: string) => Promise<AuthUser>
+  login: (email: string, password: string) => Promise<LoginResult>
+  verify2FA: (userId: number, codigo: string) => Promise<AuthUser>
   logout: () => Promise<void>
   refreshUser: () => Promise<void>
 }
@@ -17,6 +22,7 @@ export const AuthContext = createContext<AuthContextValue>({
   token:       null,
   isLoading:   true,
   login:       async () => { throw new Error('AuthProvider no montado') },
+  verify2FA:   async () => { throw new Error('AuthProvider no montado') },
   logout:      async () => {},
   refreshUser: async () => {},
 })
@@ -42,8 +48,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsLoading(false))
   }, [])
 
-  const login = useCallback(async (email: string, password: string): Promise<AuthUser> => {
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     const response = await authApi.login(email, password)
+    if ('requires2FA' in response && response.requires2FA) {
+      return { type: '2fa_required', userId: response.userId }
+    }
+    localStorage.setItem('token', response.token)
+    setToken(response.token)
+    const me = await authApi.me()
+    setUser(me)
+    return { type: 'success', user: me }
+  }, [])
+
+  const verify2FA = useCallback(async (userId: number, codigo: string): Promise<AuthUser> => {
+    const response = await authApi.verify2FA(userId, codigo)
     localStorage.setItem('token', response.token)
     setToken(response.token)
     const me = await authApi.me()
@@ -68,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, verify2FA, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   )

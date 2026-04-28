@@ -113,7 +113,12 @@ export interface AuthUser {
 
 export interface LoginResponse {
   token: string
-  user: AuthUser
+  usuario: AuthUser
+}
+
+export interface TwoFARequired {
+  requires2FA: true
+  userId: number
 }
 
 export interface ApiResponse<T> {
@@ -144,4 +149,40 @@ export interface ClaseRecurrente {
   precio: number
   profesorId: number
   profesor?: Profesor
+}
+
+// ── Dashboard / Reportes ──────────────────────────────────────────────────────
+
+export interface ClaseHoy {
+  id:              number
+  hora:            string
+  zona:            ZonaClase
+  profesor:        string
+  cupoMaximo:      number
+  reservasActivas: number
+  enCola:          number
+}
+
+export interface ActividadReciente {
+  tipo:        'RESERVA' | 'PAGO' | 'CANCELACION' | 'ABONO'
+  descripcion: string
+  cliente:     string
+  fecha:       string
+  monto?:      number
+}
+
+export interface DashboardStats {
+  clientesActivos:          number
+  clientesAbonados:         number
+  clientesSancionados:      number
+  ingresosMesActual:        number
+  ingresosMesAnterior:      number
+  complementosPendientes:   number
+  reservasPendientesPago:   number
+  clasesHoy:                ClaseHoy[]
+  actividadReciente:        ActividadReciente[]
+  asistenciaPorDia:         { dia: string; reservas: number }[]
+  popularidadPorZona:       { zona: ZonaClase; reservas: number; porcentaje: number }[]
+  clasesConCupoCompleto:    number
+  tasaCancelacion:          number
 }

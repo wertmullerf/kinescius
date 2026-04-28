@@ -15,6 +15,7 @@ import type { UsuarioAdmin } from '@/api/endpoints/usuarios'
 import { configApi } from '@/api/endpoints/config'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
+import { Toast } from '@/components/ui/Toast'
 import { fadeInUp } from '@/utils/animations'
 import { formatCurrency, formatDate, tipoPagoLabel, metodoPagoLabel, zonaLabel } from '@/utils/formatters'
 import type { MetodoPago, TipoPago, Reserva } from '@/types'
@@ -27,7 +28,7 @@ function AbonoModal({ onClose, onCreated }: { onClose: () => void; onCreated: ()
   const [clientes,      setClientes]      = useState<UsuarioAdmin[]>([])
   const [precioClase,   setPrecioClase]   = useState<number | null>(null)
   const [clienteId,     setClienteId]     = useState('')
-  const [cantidad,      setCantidad]      = useState('5')
+  const [cantidad,      setCantidad]      = useState(5)
   const [metodo,        setMetodo]        = useState<MetodoPago>('EFECTIVO')
   const [referencia,    setReferencia]    = useState('')
   const [saving,        setSaving]        = useState(false)
@@ -50,17 +51,18 @@ function AbonoModal({ onClose, onCreated }: { onClose: () => void; onCreated: ()
   })
 
   const cliente = clientes.find(c => c.id === Number(clienteId))
-  const montoBase  = precioClase !== null ? Number(cantidad) * precioClase : 0
+  const montoBase  = precioClase !== null ? cantidad * precioClase : 0
   const montoFinal = cliente?.sancionado ? montoBase : Math.round(montoBase * 0.8)
 
   async function handleSave() {
     if (!clienteId || !cantidad || !metodo) { setError('Completá todos los campos'); return }
+    if (cantidad < 3) { setError('La cantidad mínima es 3 clases'); return }
     setSaving(true)
     setError('')
     try {
       await pagosApi.registrarAbono({
         clienteId:     Number(clienteId),
-        cantidadClases: Number(cantidad),
+        cantidadClases: cantidad,
         precioPorClase: precioClase ?? 0,
         metodo,
         referencia: referencia || undefined,
@@ -108,13 +110,31 @@ function AbonoModal({ onClose, onCreated }: { onClose: () => void; onCreated: ()
         {/* Cantidad */}
         <div>
           <label className="block text-xs font-medium text-text-secondary mb-1">Cantidad de clases</label>
+          <div className="grid grid-cols-4 gap-2 mb-2">
+            {[3, 5, 10, 20].map(n => (
+              <button
+                key={n}
+                type="button"
+                onClick={() => setCantidad(n)}
+                className={[
+                  'py-2 rounded-xl text-sm font-semibold border transition-colors',
+                  cantidad === n
+                    ? 'bg-brand-green text-white border-brand-green'
+                    : 'border-surface-border text-text-secondary hover:border-brand-green hover:text-brand-green',
+                ].join(' ')}
+              >
+                {n}
+              </button>
+            ))}
+          </div>
           <input
             type="number"
-            min="1"
+            min="3"
             value={cantidad}
-            onChange={e => setCantidad(e.target.value)}
+            onChange={e => setCantidad(Math.max(3, Number(e.target.value)))}
             className="w-full px-3 py-2 text-sm rounded-xl border border-surface-border bg-surface text-text-primary focus:outline-none focus:border-brand-green"
           />
+          <p className="text-xs text-text-secondary mt-1">Mínimo 3 clases por abono.</p>
         </div>
 
         {/* Resumen */}
@@ -176,10 +196,11 @@ function AbonoModal({ onClose, onCreated }: { onClose: () => void; onCreated: ()
 // ─── Tab: Abonos ──────────────────────────────────────────────────────────────
 
 function AbonossTab() {
-  const [abonos,   setAbonos]   = useState<PagoAbonoConCliente[]>([])
-  const [loading,  setLoading]  = useState(true)
-  const [q,        setQ]        = useState('')
+  const [abonos,    setAbonos]    = useState<PagoAbonoConCliente[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [q,         setQ]         = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [toastOk,   setToastOk]   = useState(false)
   const timerRef   = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const cargar = useCallback((query?: string) => {
@@ -259,7 +280,15 @@ function AbonossTab() {
       {showModal && (
         <AbonoModal
           onClose={() => setShowModal(false)}
-          onCreated={() => { setShowModal(false); cargar(q || undefined) }}
+          onCreated={() => { setShowModal(false); cargar(q || undefined); setToastOk(true) }}
+        />
+      )}
+
+      {toastOk && (
+        <Toast
+          message="Abono registrado correctamente."
+          type="success"
+          onClose={() => setToastOk(false)}
         />
       )}
     </div>

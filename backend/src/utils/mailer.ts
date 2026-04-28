@@ -255,6 +255,29 @@ export async function mailInstanciaCancelada(
   );
 }
 
+export async function mail2FACode(
+  admin: { nombre: string; email: string },
+  codigo: string
+) {
+  await send(
+    admin.email,
+    "Código de verificación — Kinescius",
+    layout(
+      "Verificación en dos pasos",
+      `<p>Hola <strong>${admin.nombre}</strong>,</p>
+       <p>Tu código de verificación para acceder como administrador es:</p>
+       <div style="text-align:center;margin:28px 0;background:${VERDE_CLARO};border-radius:12px;padding:28px">
+         <p style="margin:0 0 8px;font-size:13px;color:${VERDE};font-weight:600;text-transform:uppercase;letter-spacing:2px">Código de acceso</p>
+         <p style="font-size:48px;font-weight:700;letter-spacing:16px;color:${VERDE};margin:0;font-family:monospace">${codigo}</p>
+       </div>
+       <p style="color:#9e9e9e;font-size:13px;text-align:center">
+         Este código expira en <strong>10 minutos</strong>.<br>
+         Si no intentaste iniciar sesión, cambiá tu contraseña de inmediato.
+       </p>`
+    )
+  );
+}
+
 export async function mailRestablecerContrasenia(
   cliente: { nombre: string; email: string },
   resetLink: string

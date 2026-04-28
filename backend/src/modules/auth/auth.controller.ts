@@ -41,6 +41,16 @@ export const authController = {
     }
   },
 
+  async verify2FA(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId, codigo } = req.body;
+      const result = await authService.verify2FA(Number(userId), codigo);
+      ok(res, result, "Verificación exitosa");
+    } catch (err) {
+      next(err);
+    }
+  },
+
   // El logout con JWT es stateless: el servidor no guarda tokens,
   // así que "invalidar" significa simplemente que el cliente descarta el token.
   // Si en el futuro se necesita invalidación real (ej: "cerrar todas las sesiones"),

@@ -71,6 +71,8 @@ model Usuario {
   tipoCliente       TipoCliente @default(NO_ABONADO) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona, no el usuario
   clasesDisponibles Int         @default(0) // solo aplica cuando rol == CLIENTE; el sistema lo gestiona
   sancionado        Boolean     @default(false) // solo aplica cuando rol == CLIENTE y tipoCliente == ABONADO; se levanta con el próximo abono
+  twoFactorCode     String?     // hash bcrypt del código 2FA (solo admin, temporal)
+  twoFactorExpires  DateTime?   // expiración del código 2FA
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 

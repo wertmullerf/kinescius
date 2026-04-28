@@ -111,7 +111,9 @@ function DetailModal({ usuario, onClose }: { usuario: UsuarioAdmin; onClose: () 
           </div>
           <div className="bg-surface-muted rounded-xl p-3">
             <p className="text-xs text-text-secondary mb-0.5">Clases disponibles</p>
-            <p className="font-bold text-brand-green text-lg">{usuario.clasesDisponibles}</p>
+            <p className="font-bold text-brand-green text-lg">
+              {detalle ? detalle.clasesDisponibles : usuario.clasesDisponibles}
+            </p>
           </div>
         </div>
 

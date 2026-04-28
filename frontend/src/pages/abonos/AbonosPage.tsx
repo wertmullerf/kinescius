@@ -42,6 +42,9 @@ export function AbonosPage() {
     })
   }, [])
 
+  // Refrescar datos del usuario al montar la página
+  useEffect(() => { refreshUser() }, [refreshUser])
+
   // Cuando el usuario vuelve a la pestaña después de pagar en MP, refrescamos
   // el usuario para ver si el webhook ya acreditó las clases
   useEffect(() => {

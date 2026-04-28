@@ -10,10 +10,13 @@ export const pagoController = {
   async cargarAbono(req: Request, res: Response, next: NextFunction) {
     try {
       const { clienteId, cantidadClases, precioPorClase, metodo, referencia } = req.body;
+      const cliente = await prisma.usuario.findUnique({ where: { id: Number(clienteId) } });
+      const descuento = cliente?.sancionado ? 0 : 0.20;
+      const monto = Math.round(Number(cantidadClases) * Number(precioPorClase) * (1 - descuento));
       const resultado = await pagoService.cargarAbonoPresencial(
         Number(clienteId),
         Number(cantidadClases),
-        Number(precioPorClase),
+        monto,
         metodo as MetodoPago,
         req.user!.id,
         referencia

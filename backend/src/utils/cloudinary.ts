@@ -7,8 +7,6 @@ cloudinary.config({
   api_secret: env.cloudinary.apiSecret,
   secure:     true,
 });
-
-console.log(cloudinary)
 /**
  * Sube un buffer de imagen a Cloudinary.
  * - Convierte automáticamente a webp
